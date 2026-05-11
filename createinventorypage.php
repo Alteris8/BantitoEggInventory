@@ -1,27 +1,30 @@
 <?php
+session_start();
 include_once("database.php");
 include_once("inventory.php");
 include_once("inventoryrepo.php");
 
 $pdo = getPDO();
-$repo = new InventoryRepo($pdo);
+$repo = new InventoryRepo($pdo, $_SESSION['admin_id']);
+
 $message = "";
-$messageType = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-	$productName = $_POST["product_name"] ?? '';
-	$price = $_POST["price"] ?? 0;
-	$quantity = $_POST["quantity"] ?? 0;
+	$productName = filter_input(INPUT_POST, "product_name", FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+	$price = filter_input(INPUT_POST, "price", FILTER_SANITIZE_NUMBER_FLOAT,  FILTER_FLAG_ALLOW_FRACTION);
+	$quantity = filter_input(INPUT_POST, "quantity", FILTER_SANITIZE_NUMBER_INT);
 
 	if ($productName && $price && $quantity) {
+
 		$inventory = new Inventory(
-			null,
 			$productName,
 			(int)$quantity,
 			(float)$price,
 			null
 		);
+
 		$repo->save($inventory);
+
 		$message = "Product added successfully!";
 	} else {
 		$message = "Please fill in all fields.";
@@ -34,9 +37,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Create Inventory – Bantito</title>
-	<link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+	<title>Create Inventory</title>
 	<style>
 		:root {
 			--green-dark: #3d5e1a;
@@ -403,107 +404,32 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 <body>
 
-	<div class="sidebar">
-		<div class="logo-area">
-			<div class="logo-box">
-				<div class="logo-circle">B</div>
-				<span class="brand-name">Bantito</span>
-			</div>
-		</div>
-		<div style="padding-top:8px;">
-			<div class="nav-section-label">Main</div>
-			<a class="nav-item" href="home.php">
-				Overview
-			</a>
-			<div class="nav-section-label">Manage</div>
-			<a class="nav-item active" href="inventorypage.php">
-				Inventory
-			</a>
-			<a class="nav-item" href="salespage.php">
-				Sales
-			</a>
-		</div>
-	</div>
+	<h1>Create Inventory</h1>
 
-	<div class="main">
+	<?php if ($message): ?>
+		<p><?= htmlspecialchars($message) ?></p>
+	<?php endif; ?>
 
-		<div class="topbar">
-			<div class="page-title">
-				<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2">
-					<line x1="8" y1="2" x2="8" y2="14" />
-					<line x1="2" y1="8" x2="14" y2="8" />
-				</svg>
-				Create Inventory
-			</div>
-			<a class="btn-back" href="inventorypage.php">
-				<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-					<polyline points="10,4 6,8 10,12" />
-				</svg>
-				Back to Inventory
-			</a>
-		</div>
+	<form method="POST">
 
-		<div class="content">
-			<div class="form-card">
+		<label>Product Name</label><br>
+		<input type="text" name="product_name" required><br><br>
 
+		<label>Price</label><br>
+		<input type="number" name="price" step="0.01" min="0" required><br><br>
 
-				<form method="POST">
-					<div class="form-body">
+		<label>Quantity</label><br>
+		<input type="number" name="quantity" min="0" required><br><br>
 
-						<?php if ($message): ?>
-							<div class="message <?= $messageType ?>">
-								<?php if ($messageType === 'success'): ?>
-									<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-										<polyline points="2,8 6,12 14,4" />
-									</svg>
-								<?php else: ?>
-									<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-										<circle cx="8" cy="8" r="6" />
-										<line x1="8" y1="5" x2="8" y2="8" />
-										<circle cx="8" cy="11" r="0.5" fill="currentColor" />
-									</svg>
-								<?php endif; ?>
-								<?= htmlspecialchars($message) ?>
-							</div>
-						<?php endif; ?>
+		<button type="button" onclick="window.location.href='inventorypage.php'">
+			Cancel
+		</button>
 
-						<div class="fg">
-							<label class="flabel" for="product_name">Product Name</label>
-							<input class="finput" type="text" id="product_name" name="product_name"
-								placeholder=" " required>
-						</div>
+		<button type="submit">
+			Create
+		</button>
 
-						<div class="frow">
-							<div class="fg">
-								<label class="flabel" for="price">Price</label>
-								<div class="prefix-wrap">
-									<span class="pfx">₱</span>
-									<input class="finput" type="number" id="price" name="price"
-										step="0.01" min="0" placeholder="0.00" required>
-								</div>
-							</div>
-							<div class="fg">
-								<label class="flabel" for="quantity">Quantity</label>
-								<input class="finput" type="number" id="quantity" name="quantity"
-									min="0" placeholder="0" required>
-							</div>
-						</div>
-
-						<div class="divider"></div>
-
-					</div>
-
-					<div class="form-footer">
-						<button type="button" class="btn-cancel"
-							onclick="window.location.href='inventorypage.php'">Cancel</button>
-						<button type="submit" class="btn-save">Create</button>
-					</div>
-				</form>
-
-			</div>
-		</div>
-
-	</div>
+	</form>
 
 </body>
 

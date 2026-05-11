@@ -3,11 +3,12 @@ class Inventory
 {
 
 	function __construct(
-		private readonly ?int $id = null,
 		private readonly string $productName,
 		private readonly int $quantity,
 		private readonly float $price,
-		private readonly ?DateTime $dateUpdated = new DateTime(),
+		private readonly ?DateTime $dateUpdated = null,
+		private readonly ?int $id = null,
+		public readonly ?int $adminId = null,
 	) {}
 
 	public function getId(): int
@@ -15,6 +16,10 @@ class Inventory
 		return $this->id;
 	}
 
+	public function getAdminId(): ?int
+	{
+		return $this->adminId;
+	}
 	public function getProductName(): string
 	{
 		return $this->productName;

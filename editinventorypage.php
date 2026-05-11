@@ -6,16 +6,22 @@ include_once("inventoryrepo.php");
 include_once("inventory.php");
 
 $pdo = getPDO();
-$inventoryRepo = new InventoryRepo($pdo);
+$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id']);
 
 $sort   = $_GET['sort'] ?? 'name';
 $order  = $_GET['order'] ?? 'DESC';
 $editId = isset($_GET['edit_id']) ? (int)$_GET['edit_id'] : null;
 
 $message = "";
-$messageType = "";
 
 if (!$editId) {
+	header("Location: inventorypage.php");
+	exit;
+}
+
+$inventory = $inventoryRepo->findById($editId);
+
+if (!$inventory) {
 	header("Location: inventorypage.php");
 	exit;
 }
@@ -26,33 +32,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 		try {
 
-			$updatedInventory = new Inventory(
-				(int)$_POST['update_id'],
-				$_POST['name'],
-				(int)$_POST['quantity'],
-				(float)$_POST['price'],
-			);
+			$id = filter_input(INPUT_POST, 'update_id', FILTER_VALIDATE_INT);
+			$name = filter_input(INPUT_POST, 'name', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+			$quantity = filter_input(INPUT_POST, 'quantity', FILTER_VALIDATE_INT);
+			$price = filter_input(INPUT_POST, 'price', FILTER_VALIDATE_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
 
-			$inventoryRepo->update(
-				(int)$_POST['update_id'],
-				$updatedInventory
-			);
+			if ($id && $name !== false && $quantity !== false && $price !== false) {
 
-			$message = "Inventory updated successfully!";
-			$messageType = "success";
+				$updatedInventory = new Inventory(
+					$name,
+					$quantity,
+					$price
+				);
+
+				$inventoryRepo->update($id, $updatedInventory);
+
+				$message = "Inventory updated successfully!";
+			} else {
+				$message = "Invalid input data.";
+			}
 		} catch (Exception $e) {
-
 			$message = "Update failed!";
-			$messageType = "error";
 		}
 	}
-}
-
-$inventory = $inventoryRepo->findById($editId);
-
-if (!$inventory) {
-	header("Location: inventorypage.php");
-	exit;
 }
 ?>
 
@@ -60,14 +62,8 @@ if (!$inventory) {
 <html>
 
 <head>
-
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-	<title>Edit Inventory – Bantito</title>
-
-	<link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-
+	<title>Edit Inventory</title>
 	<style>
 		:root {
 
@@ -403,196 +399,51 @@ if (!$inventory) {
 			box-shadow: 0 2px 8px rgba(232, 82, 58, 0.3);
 		}
 	</style>
-
 </head>
 
 <body>
 
-	<div class="sidebar">
+	<h1>Edit Inventory</h1>
 
-		<div class="logo-area">
+	<?php if ($message): ?>
+		<p><?= htmlspecialchars($message) ?></p>
+	<?php endif; ?>
 
-			<div class="logo-box">
+	<form method="POST">
 
-				<div class="logo-circle">B</div>
+		<input type="hidden" name="update_id" value="<?= $inventory->getId() ?>">
 
-				<span class="brand-name">Bantito</span>
+		<label>Product Name</label><br>
+		<input type="text" name="name"
+			value="<?= htmlspecialchars($inventory->getProductName()) ?>" required><br><br>
 
-			</div>
+		<label>Quantity</label><br>
+		<input type="number" name="quantity"
+			value="<?= $inventory->getQuantity() ?>" min="0" required><br><br>
 
-		</div>
+		<label>Price</label><br>
+		<input type="number" name="price"
+			value="<?= $inventory->getPrice() ?>" step="0.01" min="0" required><br><br>
 
-		<div style="padding-top:8px;">
+		<p>
+			<strong>Status:</strong>
+			<?= htmlspecialchars($inventory->getStatus()) ?>
+		</p>
 
-			<div class="nav-section-label">Main</div>
+		<p>
+			<strong>Last Updated:</strong>
+			<?= $inventory->getDateUpdated()->format('d-m-Y') ?>
+		</p>
 
-			<a class="nav-item" href="home.php">
-				Overview
-			</a>
+		<button type="button" onclick="window.location.href='inventorypage.php?sort=<?= $sort ?>&order=<?= $order ?>'">
+			Cancel
+		</button>
 
-			<div class="nav-section-label">Manage</div>
+		<button type="submit">
+			Save Changes
+		</button>
 
-			<a class="nav-item active" href="inventorypage.php">
-				Inventory
-			</a>
-
-			<a class="nav-item" href="salespage.php">
-				Sales
-			</a>
-
-		</div>
-
-	</div>
-
-	<div class="main">
-
-		<div class="topbar">
-
-			<div class="page-title">
-				Edit Inventory
-			</div>
-
-			<a class="btn-back"
-				href="inventorypage.php?sort=<?= $sort ?>&order=<?= $order ?>">
-				Back to Inventory
-			</a>
-
-		</div>
-
-		<div class="content">
-
-			<div class="form-card">
-
-				<div class="form-card-header">
-
-					<div class="form-card-title">
-						Update Product
-					</div>
-
-				</div>
-
-				<form method="POST"
-					action="editinventorypage.php?edit_id=<?= $editId ?>&sort=<?= $sort ?>&order=<?= $order ?>">
-
-					<div class="form-body">
-
-						<?php if ($message): ?>
-
-							<div class="message <?= $messageType ?>">
-								<?= htmlspecialchars($message) ?>
-							</div>
-
-						<?php endif; ?>
-
-						<input type="hidden"
-							name="update_id"
-							value="<?= $inventory->getId() ?>">
-
-						<input type="hidden"
-							name="sort"
-							value="<?= $sort ?>">
-
-						<input type="hidden"
-							name="order"
-							value="<?= $order ?>">
-
-						<div class="fg">
-
-							<label class="flabel">
-								Product Name
-							</label>
-
-							<input class="finput"
-								type="text"
-								name="name"
-								value="<?= htmlspecialchars($inventory->getProductName()) ?>"
-								required>
-
-						</div>
-
-						<div class="frow">
-
-							<div class="fg">
-
-								<label class="flabel">
-									Quantity
-								</label>
-
-								<input class="finput"
-									type="number"
-									name="quantity"
-									value="<?= $inventory->getQuantity() ?>"
-									min="0"
-									required>
-
-							</div>
-
-							<div class="fg">
-
-								<label class="flabel">
-									Price
-								</label>
-
-								<div class="prefix-wrap">
-
-									<span class="pfx">₱</span>
-
-									<input class="finput"
-										type="number"
-										name="price"
-										value="<?= $inventory->getPrice() ?>"
-										step="0.01"
-										min="0"
-										required>
-
-								</div>
-
-							</div>
-
-						</div>
-
-						<div class="divider"></div>
-
-						<div class="info-box">
-
-							<strong>Status:</strong>
-							<?= htmlspecialchars($inventory->getStatus()) ?>
-
-							<br>
-
-							<strong>Last Updated:</strong>
-							<?= htmlspecialchars($inventory->getDateUpdated()->format('d-m-Y')) ?>
-
-						</div>
-
-					</div>
-
-					<div class="form-footer">
-
-						<button type="button"
-							class="btn-cancel"
-							onclick="window.location.href='inventorypage.php?sort=<?= $sort ?>&order=<?= $order ?>'">
-
-							Cancel
-
-						</button>
-
-						<button type="submit"
-							class="btn-save">
-
-							Save Changes
-
-						</button>
-
-					</div>
-
-				</form>
-
-			</div>
-
-		</div>
-
-	</div>
+	</form>
 
 </body>
 

@@ -2,85 +2,84 @@
 session_start();
 include_once("database.php");
 include_once("inventoryrepo.php");
+
 $pdo = getPDO();
-$inventoryRepo = new InventoryRepo($pdo);
+$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id']);
 
-$sort      = $_GET['sort']  ?? 'name';
-$order     = $_GET['order'] ?? 'DESC';
+$sort  = $_GET['sort']  ?? 'name';
+$order = $_GET['order'] ?? 'DESC';
 $nextOrder = $order === 'ASC' ? 'DESC' : 'ASC';
-$error     = $_GET['error'] ?? null;
+$error = $_GET['error'] ?? null;
 
-$search = isset($_GET['search']) ? $_GET['search'] : "";
+$search = $_GET['search'] ?? "";
 
-if ($search !== "") {
-	$inventories = $inventoryRepo->searchInventory($search);
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
 	$selectedId = isset($_POST['selected_id']) ? (int)$_POST['selected_id'] : null;
-	$sort       = $_POST['sort']  ?? 'name';
-	$order      = $_POST['order'] ?? 'DESC';
+	$sort  = $_POST['sort'] ?? 'name';
+	$order = $_POST['order'] ?? 'DESC';
+	if (isset($_POST['backToLogin'])) {
+		header("Location: admintestpage.php");
+		exit();
+	}
 
 	if (isset($_POST['create'])) {
 		header("Location: createinventorypage.php");
 		exit();
 	}
 
-	if (isset($_POST['edit']) || isset($_POST['delete']) || isset($_POST['processSales'])) {
-		if (!$selectedId) {
-			header("Location: inventorypage.php?sort=$sort&order=$order&error=no_selection");
-			exit();
-		}
+	if (!$selectedId && isset($_POST['edit'], $_POST['delete'], $_POST['processSales'])) {
+		header("Location: inventorypage.php?sort=$sort&order=$order&error=no_selection");
+		exit();
+	}
 
-		if (isset($_POST['edit'])) {
-			header("Location: editinventorypage.php?edit_id=$selectedId&sort=$sort&order=$order");
-			exit();
-		}
+	if (isset($_POST['edit'])) {
+		header("Location: editinventorypage.php?edit_id=$selectedId&sort=$sort&order=$order");
+		exit();
+	}
 
-		if (isset($_POST['delete'])) {
-			$inventoryRepo->delete($selectedId);
-			header("Location: inventorypage.php?sort=$sort&order=$order");
-			exit();
-		}
-		if (isset($_POST['processSales'])) {
-			$inventory = $inventoryRepo->findById($selectedId);
-			if ($inventory->getQuantity() < 1) {
-				header("Location: inventorypage.php?sort=$sort&order=$order&error=empty_quantity");
-				exit();
-			} else {
-				header("Location: processsalespage.php?inventory_id=$selectedId&sort=$sort&order=$order");
-				exit();
-			}
-		}
+	if (isset($_POST['delete'])) {
+		$inventoryRepo->delete($selectedId);
+		header("Location: inventorypage.php?sort=$sort&order=$order");
+		exit();
 	}
 
 	if (isset($_POST['processSales'])) {
-		header("Location: processsalespage.php");
-		exit;
+		$inventory = $inventoryRepo->findById($selectedId);
+
+		if ($inventory->getQuantity() < 1) {
+			header("Location: inventorypage.php?sort=$sort&order=$order&error=empty_quantity");
+			exit();
+		}
+
+		header("Location: processsalespage.php?inventory_id=$selectedId&sort=$sort&order=$order");
+		exit();
 	}
 
 	header("Location: inventorypage.php?sort=$sort&order=$order");
-	exit;
+	exit();
 }
+
 if ($search !== "") {
 	$inventories = $inventoryRepo->searchInventory($search);
 } else {
 	$inventories = $inventoryRepo->findAll($sort, $order);
 }
+$page       = max(1, (int)($_GET['page'] ?? 1));
+$limit      = 10;
+$total      = $inventoryRepo->countFiltered($search);
+$totalPages = (int)ceil($total / $limit);
+$inventories = $inventoryRepo->paginate($page, $limit, $sort, $order, $search);
 
 ?>
+
 <!DOCTYPE html>
 <html>
 
 <head>
-
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-	<title>Inventory – Bantito</title>
-
-	<link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-
+	<title>Inventory</title>
 	<style>
 		:root {
 			--green-mid: #4a6b24;
@@ -340,8 +339,21 @@ if ($search !== "") {
 			border-radius: 999px;
 			font-size: 11px;
 			font-weight: 700;
+		}
+
+		.status.in-stock {
 			background: #eef6e6;
 			color: #4f7a1e;
+		}
+
+		.status.low-stock {
+			background: #fff3e0;
+			color: #ff9800;
+		}
+
+		.status.out-of-stock {
+			background: #ffebee;
+			color: #f44336;
 		}
 
 		.empty {
@@ -350,251 +362,82 @@ if ($search !== "") {
 			color: var(--muted);
 		}
 	</style>
-
-
 </head>
 
 <body>
 
-	<div class="sidebar">
+	<h1>Inventory</h1>
 
-		<div class="logo-area">
+	<?php if ($error === 'no_selection'): ?>
+		<p>Please select an item first.</p>
+	<?php elseif ($error === 'empty_quantity'): ?>
+		<p>Item is out of stock.</p>
+	<?php endif; ?>
 
-			<div class="logo-box">
+	<form method="GET">
+		<input type="text" name="search" value="<?= htmlspecialchars($search) ?>">
+		<button type="submit">Search</button>
+	</form>
 
-				<div class="logo-circle">B</div>
+	<form method="POST">
 
-				<span class="brand-name">Bantito</span>
+		<input type="hidden" name="sort" value="<?= $sort ?>">
+		<input type="hidden" name="order" value="<?= $order ?>">
 
-			</div>
+		<button type="submit" name="create">Create</button>
+		<button type="submit" name="edit">Edit</button>
+		<button type="submit" name="delete" onclick="return confirm('Delete this item?')">Delete</button>
+		<button type="submit" name="processSales">Process Sales</button>
 
-		</div>
+		<table border="1">
 
-		<div style="padding-top:8px;">
+			<tr>
+				<th>Select</th>
+				<th>Name</th>
+				<th>Quantity</th>
+				<th>Price</th>
+				<th>Status</th>
+				<th>Last Updated</th>
+			</tr>
 
-			<div class="nav-section-label">Main</div>
-
-			<a class="nav-item" href="home.php">
-				Overview
-			</a>
-
-			<div class="nav-section-label">Manage</div>
-
-			<a class="nav-item active" href="inventorypage.php">
-				Inventory
-			</a>
-
-			<a class="nav-item" href="salespage.php">
-				Sales
-			</a>
-
-		</div>
-
-	</div>
-
-	<div class="main">
-
-		<div class="topbar">
-
-			<div class="page-title">
-				Inventory
-			</div>
-
-		</div>
-
-		<div class="content">
-
-			<?php if ($error === 'no_selection'): ?>
-
-				<div class="alert error">
-					Please select an item first.
-				</div>
-
-			<?php elseif ($error === 'empty_quantity'): ?>
-
-				<div class="alert error">
-					Item is out of stock.
-				</div>
-
+			<?php if (!empty($inventories)): ?>
+				<?php foreach ($inventories as $inventory): ?>
+					<tr>
+						<td>
+							<input type="radio" name="selected_id" value="<?= $inventory->getId() ?>">
+						</td>
+						<td><?= htmlspecialchars($inventory->getProductName()) ?></td>
+						<td><?= htmlspecialchars($inventory->getQuantity()) ?></td>
+						<td>₱<?= htmlspecialchars($inventory->getPrice()) ?></td>
+						<td><?= htmlspecialchars($inventory->getStatus()) ?></td>
+						<td><?= $inventory->getDateUpdated()->format('d-m-Y') ?></td>
+					</tr>
+				<?php endforeach; ?>
+			<?php else: ?>
+				<tr>
+					<td colspan="6">Empty inventory</td>
+				</tr>
 			<?php endif; ?>
 
-			<div class="toolbar">
+		</table>
+		<input type="submit" name="backToLogin" value="Back to Login">
 
-				<form method="GET" class="search-form">
+	</form>
+	<div>
+		<?php if ($page > 1): ?>
+			<a href="?page=<?= $page - 1 ?>">Previous</a>
+		<?php endif; ?>
 
-					<input type="text"
-						name="search"
-						class="search-input"
-						placeholder="Search inventory..."
-						value="<?php echo htmlspecialchars($search); ?>">
+		<?php for ($i = 1; $i <= $totalPages; $i++): ?>
+			<a href="?page=<?= $i ?>"
+				<?= $i === $page ? 'style="font-weight:bold"' : '' ?>>
+				<?= $i ?>
+			</a>
+		<?php endfor; ?>
 
-					<button type="submit"
-						class="btn btn-primary">
-
-						Search
-
-					</button>
-
-				</form>
-
-				<form method="post"
-					action="inventorypage.php">
-
-					<input type="hidden"
-						name="sort"
-						value="<?= $sort ?>">
-
-					<input type="hidden"
-						name="order"
-						value="<?= $order ?>">
-
-					<div class="actions">
-
-						<input type="submit"
-							name="create"
-							value="Create"
-							class="btn btn-primary">
-
-						<input type="submit"
-							name="edit"
-							value="Edit"
-							class="btn btn-secondary">
-
-						<input type="submit"
-							name="delete"
-							value="Delete"
-							class="btn btn-secondary"
-							onclick="return confirm('Delete this item?')">
-
-						<input type="submit"
-							name="processSales"
-							value="Process Sales"
-							class="btn btn-secondary">
-
-					</div>
-
-			</div>
-
-			<div class="table-card">
-
-				<table>
-
-					<thead>
-
-						<tr>
-
-							<th>Select</th>
-
-							<?php
-							$columns = [
-								'name'        => 'Product Name',
-								'quantity'    => 'Quantity',
-								'price'       => 'Unit Price',
-								'status'      => 'Status',
-								'lastUpdated' => 'Last Updated',
-							];
-
-							foreach ($columns as $col => $label):
-
-								$arrow = ($sort === $col)
-									? ($order === 'ASC' ? '▲' : '▼')
-									: '↕';
-
-								$sortLink = http_build_query([
-									'sort'  => $col,
-									'order' => $sort === $col ? $nextOrder : 'ASC',
-								]);
-							?>
-
-								<th>
-
-									<?= $label ?>
-
-									<button type="button"
-										class="sort-btn"
-										onclick="window.location='?<?= $sortLink ?>'">
-
-										<?= $arrow ?>
-
-									</button>
-
-								</th>
-
-							<?php endforeach; ?>
-
-						</tr>
-
-					</thead>
-
-					<tbody>
-
-						<?php if (!empty($inventories)): ?>
-
-							<?php foreach ($inventories as $inventory): ?>
-
-								<tr>
-
-									<td>
-										<input type="radio"
-											name="selected_id"
-											value="<?= $inventory->getId() ?>">
-									</td>
-
-									<td>
-										<?= htmlspecialchars($inventory->getProductName()) ?>
-									</td>
-
-									<td>
-										<?= htmlspecialchars($inventory->getQuantity()) ?>
-									</td>
-
-									<td>
-										₱<?= htmlspecialchars($inventory->getPrice()) ?>
-									</td>
-
-									<td>
-
-										<span class="status">
-
-											<?= htmlspecialchars($inventory->getStatus()) ?>
-
-										</span>
-
-									</td>
-
-									<td>
-										<?= htmlspecialchars($inventory->getDateUpdated()->format('d-m-Y')) ?>
-									</td>
-
-								</tr>
-
-							<?php endforeach; ?>
-
-						<?php else: ?>
-
-							<tr>
-
-								<td colspan="6"
-									class="empty">
-
-									Empty inventory
-
-								</td>
-
-							</tr>
-
-						<?php endif; ?>
-
-					</tbody>
-
-				</table>
-
-			</div>
-
-			</form>
-
-		</div>
-
+		<?php if ($page < $totalPages): ?>
+			<a href="?page=<?= $page + 1 ?>">Next</a>
+		<?php endif; ?>
 	</div>
 
 </body>

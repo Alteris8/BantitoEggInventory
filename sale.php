@@ -6,14 +6,19 @@ class Sale
 		private readonly string $productName,
 		private readonly int $itemsSold,
 		private readonly float $sale,
-		private readonly DateTime $date = new DateTime(),
+		private readonly ?DateTime $date = null,
 		private readonly ?int $inventoryId = null,
+		private readonly ?int $adminId = null,
 		private readonly ?int $id = null,
 	) {}
 
 	public function getId(): ?int
 	{
 		return $this->id;
+	}
+	public function getAdminId(): ?int
+	{
+		return $this->adminId;
 	}
 
 	public function getInventoryId(): ?int

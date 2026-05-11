@@ -12,14 +12,14 @@ $sort  = $_GET['sort'] ?? 'name';
 $order = $_GET['order'] ?? 'DESC';
 
 if (!$inventoryId) {
-	header("Location: inventorypage.php");
+	header("Location: capitaltestpage.php");
 	exit;
 }
 
 $inventory = $inventoryRepo->findById($inventoryId);
 
 if (!$inventory) {
-	header("Location: inventorypage.php");
+	header("Location: capitaltestpage.php");
 	exit;
 }
 
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 		try {
 			$inventoryRepo->processSales($inventoryId, $amount, $price);
-			header("Location: inventorypage.php?sort=$sort&order=$order");
+			header("Location: capitaltestpage.php");
 			exit;
 		} catch (Exception $e) {
 			$error = "Failed: " . $e->getMessage();
@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
 		<button type="button"
-			onclick="window.location='inventorypage.php?sort=<?= $sort ?>&order=<?= $order ?>'">
+			onclick="window.location='capitaltransactionspage.php'">
 			Cancel
 		</button>
 
