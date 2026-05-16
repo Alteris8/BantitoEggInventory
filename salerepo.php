@@ -272,18 +272,6 @@ class SalesRepo extends BaseRepository
 		]);
 	}
 
-	public function delete(int $id): void
-	{
-		$stmt = $this->pdo->prepare("
-			DELETE FROM sales_tb WHERE id = :id AND adminId = :adminId
-			");
-
-		$stmt->execute([
-			':id' => $id,
-			':adminId' => $this->adminId,
-		]);
-	}
-
 	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', ?string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
 	{
 		$offset = ($page - 1) * $limit;

@@ -185,20 +185,6 @@ class InventoryRepo extends BaseRepository
 	}
 
 
-
-	public function delete(int $id): void
-	{
-		$stmt = $this->pdo->prepare("
-			DELETE FROM inventory_tb WHERE id = :id AND adminId = :adminId
-			");
-
-		$stmt->execute([
-			':id' => $id,
-			':adminId' => $this->adminId
-		]);
-	}
-
-
 	public function save(Inventory $inventory): void
 	{
 		$stmt = $this->pdo->prepare("

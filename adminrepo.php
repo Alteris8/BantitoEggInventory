@@ -47,9 +47,9 @@ class AdminRepo extends BaseRepository
 	{
 		$allowedColumns = ['fullName', 'username', 'password', 'createdAt'];
 		$allowedOrders = ['ASC', 'DESC'];
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'lastUpdated';
+		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'createdAt';
 		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
-		$stmt = $this->pdo->query("SELECT * FROM inventory_tb ORDER BY $sortColumn $sortOrder");
+		$stmt = $this->pdo->query("SELECT * FROM admins_tb ORDER BY $sortColumn $sortOrder");
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 		return array_map(fn($row) => new Admin(
@@ -65,11 +65,11 @@ class AdminRepo extends BaseRepository
 	{
 		$stmt = $this->pdo->prepare("
 			SELECT * FROM admins_tb
-			WHERE name LIKE :name
+			WHERE username LIKE :username
 		");
 
 		$stmt->execute([
-			':name' => '%' . $username . '%'
+			':username' => '%' . $username . '%'
 		]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		if (!$rows) return null;
@@ -85,7 +85,7 @@ class AdminRepo extends BaseRepository
 	public function delete(int $id): void
 	{
 		$stmt = $this->pdo->prepare("
-			DELETE FROM admin_tb WHERE id = :id
+			DELETE FROM admins_tb WHERE id = :id
 			");
 
 		$stmt->execute([
@@ -110,11 +110,11 @@ class AdminRepo extends BaseRepository
 	public function update(int $id, Admin $admin): void
 	{
 		$stmt = $this->pdo->prepare("
-			UPDATE admins_tb
-			SET fullName = :name,
-				username = :username,
-			WHERE id = :id
-			");
+		UPDATE admins_tb
+		SET fullName = :fullName,
+			username = :username
+		WHERE id = :id
+	");
 
 		$stmt->execute([
 			':id' => $id,
