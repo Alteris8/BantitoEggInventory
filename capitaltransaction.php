@@ -5,7 +5,6 @@ class CapitalTransaction
 {
 
 	function __construct(
-
 		private readonly string $type,
 		private readonly float $amount,
 		private readonly string $description,
@@ -51,11 +50,11 @@ class CapitalTransaction
 		return $this->createdAt;
 	}
 
-	public function getInventoryId(): int
+	public function getInventoryId(): ?int
 	{
 		return $this->inventoryId;
 	}
-	public function getQuantity(): int
+	public function getQuantity(): ?int
 	{
 		return $this->quantity;
 	}

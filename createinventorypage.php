@@ -3,9 +3,12 @@ session_start();
 include_once("database.php");
 include_once("inventory.php");
 include_once("inventoryrepo.php");
+include_once("producttyperepo.php");
 
 $pdo = getPDO();
-$repo = new InventoryRepo($pdo, $_SESSION['admin_id']);
+$productTypeRepo = new ProductTypeRepo($pdo, $_SESSION['admin_id']);
+$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
+$allProductTypes = $productTypeRepo->findAllTypes();
 
 $message = "";
 
@@ -13,23 +16,24 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 	$productName = filter_input(INPUT_POST, "product_name", FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 	$price = filter_input(INPUT_POST, "price", FILTER_SANITIZE_NUMBER_FLOAT,  FILTER_FLAG_ALLOW_FRACTION);
 	$quantity = filter_input(INPUT_POST, "quantity", FILTER_SANITIZE_NUMBER_INT);
+	$productType = $_POST['productType'] ?? null;
 
-	if ($productName && $price && $quantity) {
-
+	if (isset($_POST['submit'])) {
 		$inventory = new Inventory(
 			$productName,
 			(int)$quantity,
 			(float)$price,
-			null
+			null,
+			$productType
 		);
-
-		$repo->save($inventory);
+		$inventoryRepo->save($inventory);
+		header("Location: inventorypage.php");
+		exit();
 
 		$message = "Product added successfully!";
-	} else {
-		$message = "Please fill in all fields.";
 	}
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -38,6 +42,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <head>
 	<meta charset="UTF-8">
 	<title>Create Inventory</title>
+	<!-- 
 	<style>
 		:root {
 			--green-dark: #3d5e1a;
@@ -400,6 +405,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 			opacity: 0.9;
 		}
 	</style>
+		-->
 </head>
 
 <body>
@@ -415,6 +421,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 		<label>Product Name</label><br>
 		<input type="text" name="product_name" required><br><br>
 
+		<label>Type:</label>
+		<select name="productType">
+			<option value="">-</option>
+			<?php foreach ($allProductTypes as $type): ?>
+				<option value="<?= htmlspecialchars($type) ?>" <?= $type === $type ? 'selected' : '' ?>>
+					<?= htmlspecialchars($type) ?>
+				</option>
+			<?php endforeach; ?>
+		</select>
+
+
 		<label>Price</label><br>
 		<input type="number" name="price" step="0.01" min="0" required><br><br>
 
@@ -425,7 +442,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 			Cancel
 		</button>
 
-		<button type="submit">
+		<button type="submit" name="submit">
 			Create
 		</button>
 

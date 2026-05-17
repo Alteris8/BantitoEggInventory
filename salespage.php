@@ -2,52 +2,30 @@
 session_start();
 include_once("database.php");
 include_once("salerepo.php");
-
+include_once("producttyperepo.php");
 $pdo = getPDO();
-$saleRepo = new SalesRepo($pdo, $_SESSION['admin_id']);
+$productTypeRepo = new ProductTypeRepo($pdo, $_SESSION['admin_id']);
+$saleRepo = new SalesRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
 
-$sort   = $_GET['sort'] ?? 'dateSold';
-$order  = $_GET['order'] ?? 'DESC';
-$filter = $_GET['filter'] ?? 'all';
+$sort        = $_GET['sort']        ?? 'dateSold';
+$order       = $_GET['order']       ?? 'DESC';
+$nextOrder   = $order === 'ASC' ? 'DESC' : 'ASC';
+$search      = $_GET['search']      ?? '';
+$productType = $_GET['productType'] ?? null;
+$filter      = $_GET['filter']      ?? 'all';
+$error       = $_GET['error']       ?? null;
 
-$month = filter_input(INPUT_GET, 'month', FILTER_VALIDATE_INT);
-$week  = filter_input(INPUT_GET, 'week', FILTER_VALIDATE_INT);
-$year  = filter_input(INPUT_GET, 'year', FILTER_VALIDATE_INT) ?? (int)date('Y');
+$month       = filter_input(INPUT_GET, 'month', FILTER_VALIDATE_INT);
+$week        = filter_input(INPUT_GET, 'week',  FILTER_VALIDATE_INT);
+$year        = filter_input(INPUT_GET, 'year',  FILTER_VALIDATE_INT) ?? (int)date('Y');
 
 $currentMonth = (int)date('m');
 $currentWeek  = (int)ceil(date('j') / 7);
 
-if (!$month && ($filter === 'week' || $filter === 'month')) {
-	$month = $currentMonth;
-}
+if (!$month && ($filter === 'week' || $filter === 'month')) $month = $currentMonth;
+if (!$week  &&  $filter === 'week') $week = $currentWeek;
 
-if (!$week && $filter === 'week') {
-	$week = $currentWeek;
-}
-
-$nextOrder = $order === 'ASC' ? 'DESC' : 'ASC';
-
-$saleTotal = $saleRepo->totalSales($filter, $month, $week, $year);
-
-switch ($filter) {
-
-	case 'week':
-		$sales = ($month && $week && $year)
-			? $saleRepo->findSalesByMonthWeek($month, $week, $year, $sort, $order)
-			: [];
-		break;
-
-	case 'month':
-		$sales = $saleRepo->findSalesByMonth($month ?? (int)date('m'), $year, $sort, $order);
-		break;
-	case 'now':
-		$sales = $saleRepo->findToday($sort, $order);
-		break;
-
-	default:
-		$sales = $saleRepo->findAll($sort, $order);
-		break;
-}
+$allProductTypes = $productTypeRepo->findAllTypes();
 
 $months = [
 	1 => 'January',
@@ -63,25 +41,41 @@ $months = [
 	11 => 'November',
 	12 => 'December'
 ];
-
-$page       = max(1, (int)($_GET['page'] ?? 1));
-$limit      = 10;
-$total      = $saleRepo->countFiltered($filter, $month, $week, $year);
-$totalPages = (int)ceil($total / $limit);
-$sales = $saleRepo->paginate($page, $limit, $sort, $order, $filter, $month, $week, $year);
-
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-	if (isset($_POST['deleteSales'])) {
-		header("Location: deletesalespage.php");
-		exit;
+	if (isset($_POST['delete']) && isset($_POST['delete_id'])) {
+		$id = (int)$_POST['delete_id'];
+		$saleRepo->delete($id);
+		header("Location: salespage.php?sort=$sort&order=$order");
+		exit();
 	}
 	if (isset($_POST['backToLogin'])) {
 		header("Location: admintestpage.php");
 		exit;
 	}
 }
+
+$page       = max(1, (int)($_GET['page'] ?? 1));
+$limit      = 10;
+$total       = $saleRepo->countFiltered($search, $productType ?? '', $filter, $month, $week, $year);
+$totalPages = (int)ceil($total / $limit);
+$sales = $saleRepo->paginate($page, $limit, $sort, $order, $search, $productType ?? '', $filter, $month, $week, $year);
+$salesTotal = $saleRepo->totalSales($filter, $month, $week, $year, $productType ?? '', $search);
+function saleUrl(array $overrides = []): string
+{
+	$params = array_merge([
+		'sort'        => $GLOBALS['sort'],
+		'order'       => $GLOBALS['order'],
+		'search'      => $GLOBALS['search'],
+		'productType' => $GLOBALS['productType'],
+		'filter'      => $GLOBALS['filter'],
+		'month'       => $GLOBALS['month'],
+		'week'        => $GLOBALS['week'],
+		'year'        => $GLOBALS['year'],
+	], $overrides);
+	return '?' . http_build_query(array_filter($params, fn($v) => $v !== null && $v !== ''));
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -90,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 	<meta charset="UTF-8">
 	<title>Sales</title>
+	<!--
 	<style>
 		:root {
 			--green-mid: #4a6b24;
@@ -348,67 +343,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			justify-content: flex-end;
 		}
 	</style>
+		-->
 </head>
 
 <body>
 
 	<h1>Sales</h1>
-
-	<form method="POST">
-		<button type="submit" name="deleteSales">Delete</button>
+	<form method="GET">
+		<input type="hidden" name="sort" value="<?= $sort ?>">
+		<input type="hidden" name="order" value="<?= $order ?>">
+		<input type="hidden" name="productType" value="<?= htmlspecialchars($productType ?? '') ?>">
+		<input type="hidden" name="filter" value="<?= $filter ?>">
+		<input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Search...">
+		<button type="submit">Search</button>
 	</form>
 
-	<form method="GET">
 
-		<label>Filter</label>
+
+	<h2>Total Sales: ₱<?= number_format($salesTotal, 2) ?></h2>
+	<form method="GET">
+		<input type="hidden" name="sort" value="<?= $sort ?>">
+		<input type="hidden" name="order" value="<?= $order ?>">
+		<input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
+
+		<label>Filter:</label>
 		<select name="filter" onchange="this.form.submit()">
-			<option value="all" <?= $filter === 'all' ? 'selected' : '' ?>>All</option>
-			<option value="week" <?= $filter === 'week' ? 'selected' : '' ?>>Weekly</option>
+			<option value="all" <?= $filter === 'all'   ? 'selected' : '' ?>>All</option>
 			<option value="month" <?= $filter === 'month' ? 'selected' : '' ?>>Monthly</option>
-			<option value="now" <?= $filter === 'now' ? 'selected' : '' ?>>Today</option>
+			<option value="week" <?= $filter === 'week'  ? 'selected' : '' ?>>Weekly</option>
+			<option value="now" <?= $filter === 'now'   ? 'selected' : '' ?>>Today</option>
+		</select>
+
+		<label>Type:</label>
+		<select name="productType" onchange="this.form.submit()">
+			<option value="">All Types</option>
+			<?php foreach ($allProductTypes as $type): ?>
+				<option value="<?= htmlspecialchars($type) ?>" <?= $productType === $type ? 'selected' : '' ?>>
+					<?= htmlspecialchars($type) ?>
+				</option>
+			<?php endforeach; ?>
 		</select>
 
 		<?php if ($filter === 'month' || $filter === 'week'): ?>
 			<select name="month" onchange="this.form.submit()">
 				<option value="">Select Month</option>
 				<?php foreach ($months as $num => $name): ?>
-					<option value="<?= $num ?>" <?= $month == $num ? 'selected' : '' ?>>
-						<?= $name ?>
-					</option>
+					<option value="<?= $num ?>" <?= $month == $num ? 'selected' : '' ?>><?= $name ?></option>
 				<?php endforeach; ?>
 			</select>
 			<select name="year" onchange="this.form.submit()">
 				<?php for ($y = date('Y'); $y >= 2020; $y--): ?>
-					<option value="<?= $y ?>" <?= $year == $y ? 'selected' : '' ?>>
-						<?= $y ?>
-					</option>
+					<option value="<?= $y ?>" <?= $year == $y ? 'selected' : '' ?>><?= $y ?></option>
 				<?php endfor; ?>
 			</select>
 		<?php endif; ?>
 
 		<?php if ($filter === 'week'): ?>
-
-			<label>Week</label>
 			<select name="week" onchange="this.form.submit()">
-				<option value="">Select</option>
+				<option value="">Select Week</option>
 				<?php for ($w = 1; $w <= 4; $w++): ?>
-					<option value="<?= $w ?>" <?= $week == $w ? 'selected' : '' ?>>
-						Week <?= $w ?>
-					</option>
+					<option value="<?= $w ?>" <?= $week == $w ? 'selected' : '' ?>>Week <?= $w ?></option>
 				<?php endfor; ?>
 			</select>
-
 		<?php endif; ?>
-
-
 	</form>
 
-	<h2>Total Sales: ₱<?= number_format($saleTotal, 2) ?></h2>
 
 	<table border="1">
 
 		<tr>
 			<th>Product Name</th>
+			<th>Product Type</th>
+			<th>Unit Price</th>
 			<th>Items Sold</th>
 			<th>Sale Amount</th>
 			<th>Date Sold</th>
@@ -418,9 +424,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			<?php foreach ($sales as $sale): ?>
 				<tr>
 					<td><?= htmlspecialchars($sale->getProductName()) ?></td>
+					<td><?= htmlspecialchars($sale->getProductType() ?? '-') ?></td>
+					<td>₱<?= number_format($sale->getPrice(), 2) ?></td>
 					<td><?= htmlspecialchars($sale->getItemsSold()) ?></td>
-					<td>₱<?= htmlspecialchars($sale->getSale()) ?></td>
+					<td>₱<?= number_format($sale->getSale(), 2) ?></td>
 					<td><?= htmlspecialchars($sale->getDate()->format('d-m-Y')) ?></td>
+					<td>
+						<form method="POST" onsubmit="return confirm('Delete this sale?')" style="display:inline">
+							<input type="hidden" name="delete_id" value="<?= $sale->getId() ?>">
+							<button type="submit" name="delete">Delete</button>
+						</form>
+					</td>
 				</tr>
 			<?php endforeach; ?>
 		<?php else: ?>
@@ -430,23 +444,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		<?php endif; ?>
 
 	</table>
-	<div>
-		<?php if ($page > 1): ?>
-			<a href="?page=<?= $page - 1 ?>&filter=<?= $filter ?>">Previous</a>
-		<?php endif; ?>
-
-		<?php for ($i = 1; $i <= $totalPages; $i++): ?>
-			<a href="?page=<?= $i ?>&filter=<?= $filter ?>"
-				<?= $i === $page ? 'style="font-weight:bold"' : '' ?>>
-				<?= $i ?>
-			</a>
-		<?php endfor; ?>
-
-		<?php if ($page < $totalPages): ?>
-			<a href="?page=<?= $page + 1 ?>&filter=<?= $filter ?>">Next</a>
-		<?php endif; ?>
-	</div>
-
+	<?php if ($totalPages > 1): ?>
+		<div>
+			<?php if ($page > 1): ?>
+				<a href="<?= saleUrl(['page' => $page - 1]) ?>">&larr; Prev</a>
+			<?php endif; ?>
+			<?php for ($i = 1; $i <= $totalPages; $i++): ?>
+				<a href="<?= saleUrl(['page' => $i]) ?>" <?= $i === $page ? 'style="font-weight:bold"' : '' ?>>
+					<?= $i ?>
+				</a>
+			<?php endfor; ?>
+			<?php if ($page < $totalPages): ?>
+				<a href="<?= saleUrl(['page' => $page + 1]) ?>">Next &rarr;</a>
+			<?php endif; ?>
+		</div>
+	<?php endif; ?>
 	<button onclick="window.location='admintestpage.php'">Back to Login</button>
 
 </body>

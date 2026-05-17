@@ -4,15 +4,18 @@ session_start();
 include_once("database.php");
 include_once("inventoryrepo.php");
 include_once("inventory.php");
+include_once("producttyperepo.php");
 
 $pdo = getPDO();
-$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id']);
-
-$sort   = $_GET['sort'] ?? 'name';
-$order  = $_GET['order'] ?? 'DESC';
-$editId = isset($_GET['edit_id']) ? (int)$_GET['edit_id'] : null;
+$productTypeRepo = new ProductTypeRepo($pdo, $_SESSION['admin_id']);
+$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
+$allProductTypes = $productTypeRepo->findAllTypes();
 
 $message = "";
+
+$editId = filter_input(INPUT_GET, 'edit_id', FILTER_VALIDATE_INT);
+$sort   = $_GET['sort']  ?? 'lastUpdated';
+$order  = $_GET['order'] ?? 'DESC';
 
 if (!$editId) {
 	header("Location: inventorypage.php");
@@ -30,29 +33,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 	if (isset($_POST['update_id'])) {
 
-		try {
+		$id = filter_input(INPUT_POST, 'update_id', FILTER_VALIDATE_INT);
+		$name = filter_input(INPUT_POST, 'name', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+		$quantity = filter_input(INPUT_POST, 'quantity', FILTER_VALIDATE_INT);
+		$price = filter_input(INPUT_POST, 'price', FILTER_VALIDATE_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
+		$productType = $_POST['productType'] ?? null;
 
-			$id = filter_input(INPUT_POST, 'update_id', FILTER_VALIDATE_INT);
-			$name = filter_input(INPUT_POST, 'name', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
-			$quantity = filter_input(INPUT_POST, 'quantity', FILTER_VALIDATE_INT);
-			$price = filter_input(INPUT_POST, 'price', FILTER_VALIDATE_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
 
-			if ($id && $name !== false && $quantity !== false && $price !== false) {
+		if (isset($_POST['submit'])) {
 
-				$updatedInventory = new Inventory(
-					$name,
-					$quantity,
-					$price
-				);
+			$updatedInventory = new Inventory(
+				$name,
+				$quantity,
+				$price,
+				null,
+				$productType
+			);
 
-				$inventoryRepo->update($id, $updatedInventory);
-
-				$message = "Inventory updated successfully!";
-			} else {
-				$message = "Invalid input data.";
-			}
-		} catch (Exception $e) {
-			$message = "Update failed!";
+			$inventoryRepo->update($id, $updatedInventory);
+			header("Location: inventorypage.php");
+			exit();
 		}
 	}
 }
@@ -64,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 	<meta charset="UTF-8">
 	<title>Edit Inventory</title>
+	<!--
 	<style>
 		:root {
 
@@ -399,6 +400,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			box-shadow: 0 2px 8px rgba(232, 82, 58, 0.3);
 		}
 	</style>
+		-->
 </head>
 
 <body>
@@ -416,6 +418,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		<label>Product Name</label><br>
 		<input type="text" name="name"
 			value="<?= htmlspecialchars($inventory->getProductName()) ?>" required><br><br>
+
+		<label>Type:</label>
+		<select name="productType">
+			<option value="">-</option>
+			<?php foreach ($allProductTypes as $type): ?>
+				<option value="<?= htmlspecialchars($type) ?>" <?= $inventory->getProductType() === $type ? 'selected' : '' ?>>
+					<?= htmlspecialchars($type) ?>
+				</option>
+			<?php endforeach; ?>
+		</select><br>
+
 
 		<label>Quantity</label><br>
 		<input type="number" name="quantity"
@@ -439,7 +452,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			Cancel
 		</button>
 
-		<button type="submit">
+		<button type="submit" name="submit">
 			Save Changes
 		</button>
 

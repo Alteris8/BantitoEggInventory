@@ -5,6 +5,9 @@ include_once("capitaltransaction.php");
 
 class CapitalTransactionRepo extends BaseRepository
 {
+
+	private $allowedColumns = ['amount', 'description', 'createdAt'];
+	private $allowedTransactionTypes = ['sale', 'expense', 'restock', 'deposit'];
 	protected function table(): string
 	{
 		return 'capital_transactions_tb';
@@ -18,351 +21,141 @@ class CapitalTransactionRepo extends BaseRepository
 		$row = $stmt->fetch(PDO::FETCH_ASSOC);
 
 		if (!$row) return null;
-
-		return new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		);
+		return $this->mapToCapital($row);
 	}
-	public function findAll(string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null): array
+	public function findAll(string $sortColumn = 'createdAt', string $sortOrder = 'DESC'): array
 	{
-		$allowedColumns = ['amount', 'description', 'createdAt'];
-		$allowedOrders = ['ASC', 'DESC'];
-		$allowedTypes = ['sale', 'expense', 'restock', 'deposit'];
-
-
-
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'createdAt';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
-		$typeClause = ($type && in_array($type, $allowedTypes)) ? "AND type = :type" : "";
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'createdAt';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
 
 		$stmt = $this->pdo->prepare("
 			SELECT * FROM capital_transactions_tb
-			WHERE adminId = :adminId $typeClause ORDER BY $sortColumn $sortOrder
+			WHERE adminId = :adminId ORDER BY $sortColumn $sortOrder
 			");
-
-		$params = [':adminId' => $this->adminId];
-		if ($type && in_array($type, $allowedTypes)) $params[':type'] = $type;
-		$stmt->execute($params);
+		$stmt->execute([':adminId' => $this->adminId]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
 
-	public function findCapitalTransactionsByMonth(int $month, int $year, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null): array
+	public function findCapitalTransactionsByMonth(int $month, int $year, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null, string $search = ''): array
 	{
-
-		$allowedColumns = ['amount', 'description', 'createdAt'];
-		$allowedOrders = ['ASC', 'DESC'];
-		$allowedTypes = ['sale', 'expense', 'restock', 'deposit'];
-
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'createdAt';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
-		$typeClause = ($type && in_array($type, $allowedTypes)) ? "AND type = :type" : "";
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'createdAt';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
+		$transactionTypeClause = ($type && in_array($type, $this->allowedTransactionTypes)) ? "AND type = :type" : "";
+		$searchClause = $search !== '' ? "AND description LIKE :search" : "";
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM capital_transactions_tb
-        WHERE MONTH(createdAt) = :month
-        AND YEAR(createdAt) = :year 
-        AND adminId = :adminId
-        $typeClause
-        ORDER BY $sortColumn $sortOrder
-    ");
-
+			SELECT * FROM capital_transactions_tb
+			WHERE MONTH(createdAt) = :month
+			AND YEAR(createdAt) = :year 
+			AND adminId = :adminId
+			$transactionTypeClause
+			$searchClause
+			ORDER BY $sortColumn $sortOrder
+		    ");
 		$params = [':month' => $month, ':year' => $year, ':adminId' => $this->adminId];
-		if ($type && in_array($type, $allowedTypes)) $params[':type'] = $type;
-
+		if ($type && in_array($type, $this->allowedTransactionTypes)) $params[':type'] = $type;
+		if ($search !== '') $params[':search'] = '%' . $search . '%';
 		$stmt->execute($params);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
 
 
 
-	public function findCapitalTransactionsByMonthWeek(int $month, int $week, int $year, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null): array
+	public function findCapitalTransactionsByMonthWeek(int $month, int $week, int $year, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null, string $search = ''): array
 	{
-
-		$allowedColumns = ['amount', 'description', 'createdAt'];
-		$allowedOrders = ['ASC', 'DESC'];
-		$allowedTypes = ['sale', 'expense', 'restock', 'deposit'];
-
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'createdAt';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
-
-		$typeClause = ($type && in_array($type, $allowedTypes)) ? "AND type = :type" : "";
-
-		$ranges = [
-			1 => [1, 7],
-			2 => [8, 14],
-			3 => [15, 21],
-			4 => [22, 31],
-		];
-
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'createdAt';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
+		$transactionTypeClause = ($type && in_array($type, $this->allowedTransactionTypes)) ? "AND type = :type" : "";
+		$searchClause = $search !== '' ? "AND description LIKE :search" : "";
+		$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
 		$start = $ranges[$week][0];
 		$end   = $ranges[$week][1];
 
 		$stmt = $this->pdo->prepare("
-		SELECT * FROM capital_transactions_tb 
-		WHERE MONTH(createdAt) = :month
-		AND YEAR(createdAt) = :year
-		AND DAY(createdAt) BETWEEN :start AND :end AND adminId = :adminId $typeClause
-		ORDER BY $sortColumn $sortOrder
-	");
-
-		$params = [
-			':month' => $month,
-			':year'  => $year,
-			':start' => $start,
-			':end'   => $end,
-			':adminId'   => $this->adminId,
-		];
-		if ($type && in_array($type, $allowedTypes)) $params[':type'] = $type;
-
+			SELECT * FROM capital_transactions_tb 
+			WHERE MONTH(createdAt) = :month
+			AND YEAR(createdAt) = :year
+			AND DAY(createdAt) BETWEEN :start AND :end
+			AND adminId = :adminId
+			$transactionTypeClause
+			$searchClause
+			ORDER BY $sortColumn $sortOrder
+		    ");
+		$params = [':month' => $month, ':year' => $year, ':start' => $start, ':end' => $end, ':adminId' => $this->adminId];
+		if ($type && in_array($type, $this->allowedTransactionTypes)) $params[':type'] = $type;
+		if ($search !== '') $params[':search'] = '%' . $search . '%';
 		$stmt->execute($params);
-
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
 
 
-	public function findCapitalTransactionsByToday(string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null): array
+	public function findCapitalTransactionsByToday(string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null, string $search = ''): array
 	{
-		$allowedColumns = ['amount', 'description', 'createdAt'];
-		$allowedOrders = ['ASC', 'DESC'];
-		$allowedTypes = ['sale', 'expense', 'restock', 'deposit'];
-
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'createdAt';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
-		$typeClause = ($type && in_array($type, $allowedTypes)) ? "AND type = :type" : "";
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'createdAt';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
+		$transactionTypeClause = ($type && in_array($type, $this->allowedTransactionTypes)) ? "AND type = :type" : "";
+		$searchClause = $search !== '' ? "AND description LIKE :search" : "";
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM capital_transactions_tb 
-        WHERE adminId = :adminId 
-        AND DATE(createdAt) = CURDATE() $typeClause
-        ORDER BY $sortColumn $sortOrder
-    ");
-		$params = [
-			':adminId' => $this->adminId
-		];
-
-		if ($type && in_array($type, $allowedTypes)) {
-			$params[':type'] = $type;
-		}
-
+			SELECT * FROM capital_transactions_tb 
+			WHERE adminId = :adminId 
+			AND DATE(createdAt) = CURDATE()
+			$transactionTypeClause
+			$searchClause
+			ORDER BY $sortColumn $sortOrder
+		    ");
+		$params = [':adminId' => $this->adminId];
+		if ($type && in_array($type, $this->allowedTransactionTypes)) $params[':type'] = $type;
+		if ($search !== '') $params[':search'] = '%' . $search . '%';
 		$stmt->execute($params);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
 	public function findByType(string $type, string $sortColumn = 'createdAt', string $sortOrder = 'DESC'): array
 	{
-		$allowedColumns = ['amount', 'description', 'createdAt'];
-		$allowedOrders = ['ASC', 'DESC'];
-		$allowedTypes = ['sale', 'expense', 'restock', 'deposit'];
-
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'createdAt';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
-		if (!in_array($type, $allowedTypes)) return [];
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'createdAt';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
+		if (!in_array($type, $this->allowedTransactionTypes)) return [];
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM capital_transactions_tb 
-        WHERE adminId = :adminId 
-        AND type = :type
-        ORDER BY $sortColumn $sortOrder
-    ");
+				SELECT * FROM capital_transactions_tb 
+				WHERE adminId = :adminId 
+				AND type = :type
+				ORDER BY $sortColumn $sortOrder
+			    ");
 		$stmt->execute([
 			':adminId' => $this->adminId,
 			':type'    => $type,
 		]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
-	}
-
-	public function exportWeeklyCapitalTransactions(int $month, int $week, int $year): array
-	{
-
-		$ranges = [
-			1 => [1, 7],
-			2 => [8, 14],
-			3 => [15, 21],
-			4 => [22, 31],
-		];
-
-		$start = $ranges[$week][0];
-		$end   = $ranges[$week][1];
-
-		$stmt = $this->pdo->prepare("
-		SELECT * FROM capital_transactions_tb 
-		WHERE MONTH(createdAt) = :month
-		AND YEAR(createdAt) = :year
-		AND DAY(createdAt) BETWEEN :start AND :end AND adminId = :adminId
-		ORDER BY name ASC
-	");
-
-		$stmt->execute([
-			'month' => $month,
-			'year'  => $year,
-			'start' => $start,
-			'end'   => $end,
-			':adminId'   => $this->adminId,
-		]);
-
-		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
-	}
-	public function exportCapitalTransactionsToday(): array
-	{
-
-		$stmt = $this->pdo->prepare("
-			SELECT * FROM capital_transactions_tb
-		   	WHERE DATE(createdAt) = CURDATE()
-			AND
-		       	adminId = :adminId
-	ORDER BY name ASC
-    ");
-		$stmt->execute([
-			':adminId' => $this->adminId,
-		]);
-		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
-	}
-	public function exportAll(): array
-	{
-		$stmt = $this->pdo->prepare("SELECT * FROM capital_transactions_tb WHERE adminId = :adminId");
-		$stmt->execute([
-			':adminId' => $this->adminId
-		]);
-		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-		), $rows);
-	}
-	public function exportToday(): array
-	{
-		$stmt = $this->pdo->prepare("SELECT * FROM capital_transactions_tb WHERE DATE(createdAt) = CURDATE() AND adminId = :adminId");
-		$stmt->execute([
-			':adminId' => $this->adminId
-		]);
-		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int) $row['id'],
-			(int) $row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
 
 	public function save(CapitalTransaction $capitalTransaction): void
 	{
 		$stmt = $this->pdo->prepare("
-			INSERT INTO capital_transactions_tb (type, amount, description, adminId, saleId) 
-			VALUES (:type, :amount, :description, :adminId, :saleId) ");
-
+			INSERT INTO capital_transactions_tb 
+			    (type, amount, description, adminId, saleId, inventoryId, quantity) 
+			VALUES 
+			    (:type, :amount, :description, :adminId, :saleId, :inventoryId, :quantity)
+		    ");
 		$stmt->execute([
-			':type' => $capitalTransaction->getType(),
-			':amount' => $capitalTransaction->getAmount(),
+			':type'        => $capitalTransaction->getType(),
+			':amount'      => $capitalTransaction->getAmount(),
 			':description' => $capitalTransaction->getDescription(),
-			':adminId' => $this->adminId,
-			':saleId' => $capitalTransaction->getSaleId(),
+			':adminId'     => $this->adminId,
+			':saleId'      => $capitalTransaction->getSaleId(),
+			':inventoryId' => $capitalTransaction->getInventoryId(),
+			':quantity'    => $capitalTransaction->getQuantity(),
 		]);
-
 	}
 
 	public function update(int $id, CapitalTransaction $capitalTransaction): void
 	{
-		
+
 		$stmt = $this->pdo->prepare("
 			UPDATE capital_transactions_tb
 			SET type = :type,
@@ -378,167 +171,208 @@ class CapitalTransactionRepo extends BaseRepository
 			':description' => $capitalTransaction->getDescription(),
 			':adminId' => $this->adminId,
 		]);
-		
 	}
 
 
-	public function calculateIncomeSummary(): array
+	public function calculateIncomeSummary(string $search = '', ?string $type = null, string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
+	{
+		$searchClause = $search !== '' ? "AND description LIKE :search" : "";
+		$typeClause   = ($type !== null && $type !== '' && in_array($type, $this->allowedTransactionTypes))
+			? "AND type = :type"
+			: "";
+
+		$dateClause = "";
+		if ($filter === 'now') {
+			$dateClause = "AND DATE(createdAt) = CURDATE()";
+		} elseif ($filter === 'month' && $month && $year) {
+			$dateClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year";
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$ranges     = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
+			$dateClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year 
+                       AND DAY(createdAt) BETWEEN :weekStart AND :weekEnd";
+		}
+
+		$params = [':adminId' => $this->adminId];
+		if ($search !== '')  $params[':search'] = '%' . $search . '%';
+		if ($typeClause !== '') $params[':type'] = $type;
+		if ($filter === 'month' && $month && $year) {
+			$params[':month'] = $month;
+			$params[':year']  = $year;
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
+			$params[':month']     = $month;
+			$params[':year']      = $year;
+			$params[':weekStart'] = $ranges[$week][0];
+			$params[':weekEnd']   = $ranges[$week][1];
+		}
+
+		$stmt = $this->pdo->prepare("
+			SELECT 
+			    SUM(CASE WHEN type = 'sale'    THEN amount ELSE 0 END) AS totalSales,
+			    SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END) AS totalDeposits,
+			    SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS totalExpenses,
+			    SUM(CASE WHEN type = 'restock' THEN amount ELSE 0 END) AS totalRestocks
+			FROM capital_transactions_tb
+			WHERE adminId = :adminId
+			$searchClause $typeClause $dateClause
+		    ");
+		$stmt->execute($params);
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+		return [
+			'totalSales'    => (float)($row['totalSales']    ?? 0),
+			'totalDeposits' => (float)($row['totalDeposits'] ?? 0),
+			'totalExpenses' => (float)($row['totalExpenses'] ?? 0),
+			'totalRestocks' => (float)($row['totalRestocks'] ?? 0),
+			'netIncome'     => ((float)($row['totalSales']    ?? 0) + (float)($row['totalDeposits'] ?? 0)) - ((float)($row['totalExpenses'] ?? 0) + (float)($row['totalRestocks'] ?? 0)),
+		];
+	}
+
+	public function recalculateBalance(): void
 	{
 		$stmt = $this->pdo->prepare("
-        SELECT 
-            SUM(CASE WHEN type = 'sale'    THEN amount ELSE 0 END) AS totalSales,
-            SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END) AS totalDeposits,
-            SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS totalExpenses,
-            SUM(CASE WHEN type = 'restock' THEN amount ELSE 0 END) AS totalRestocks
-        FROM capital_transactions_tb
-        WHERE adminId = :adminId
-    ");
-		$stmt->execute([':adminId' => $this->adminId]);
-		$row = $stmt->fetch(PDO::FETCH_ASSOC);
-		$transactionTotalRows = [
-			'totalSales'    => (float) $row['totalSales'],
-			'totalDeposits' => (float) $row['totalDeposits'],
-			'totalExpenses' => (float) $row['totalExpenses'],
-			'totalRestocks' => (float) $row['totalRestocks'],
-			'netIncome'     => ((float)$row['totalSales'] + (float)$row['totalDeposits'])
-				- ((float)$row['totalExpenses'] + (float)$row['totalRestocks']),
-		];
-
-
-
-		$stmt2 = $this->pdo->prepare("
 		UPDATE capital_tb c
 		JOIN (
-			SELECT 
-				adminId,
-				COALESCE(
-					SUM(CASE WHEN type = 'sale' THEN amount ELSE 0 END)
-					+
-					SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END)
-					-
-					SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END)
-					-
-					SUM(CASE WHEN type = 'restock' THEN amount ELSE 0 END)
-				,0) AS netIncome
-			FROM capital_transactions_tb
-			WHERE adminId = :adminId_sub
-			GROUP BY adminId
+		    SELECT 
+			adminId,
+			COALESCE(
+			    SUM(CASE WHEN type = 'sale'    THEN amount ELSE 0 END)
+			  + SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END)
+			  - SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END)
+			  - SUM(CASE WHEN type = 'restock' THEN amount ELSE 0 END)
+			, 0) AS netIncome
+		    FROM capital_transactions_tb
+		    WHERE adminId = :adminId_sub
+		    GROUP BY adminId
 		) t ON c.adminId = t.adminId
 		SET c.balance = c.initialBalance + t.netIncome
-		WHERE c.adminId = :adminId_main");
-
-		$stmt2->execute([':adminId_sub' => $this->adminId, 
-		':adminId_main' => $this->adminId]);
-		return $transactionTotalRows;
-
-		
+		WHERE c.adminId = :adminId_main
+	    ");
+		$stmt->execute([
+			':adminId_sub'  => $this->adminId,
+			':adminId_main' => $this->adminId,
+		]);
 	}
-	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null, ?string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
+
+	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', string $search = '', string $type = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
 	{
 		$offset = ($page - 1) * $limit;
-		$allowedColumns = ['amount', 'description', 'createdAt'];
-		$allowedOrders = ['ASC', 'DESC'];
-		$allowedTypes = ['sale', 'expense', 'restock', 'deposit'];
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'createdAt';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
 
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'createdAt';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
+		$searchClause = ($search !== null && $search !== '') ? "AND description LIKE :search" : "";
+		$transactionTypeClause = ($type !== '' && in_array($type, $this->allowedTransactionTypes)) ? "AND type = :type" : "";
 
-		$typeClause = ($type && in_array($type, $allowedTypes)) ? "AND type = :type" : "";
-
-		$filterClause = '';
-		$params = [':adminId' => $this->adminId];
-
-		switch ($filter) {
-			case 'now':
-				$filterClause = "AND DATE(createdAt) = CURDATE()";
-				break;
-			case 'month':
-				$filterClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year";
-				$params[':month'] = $month;
-				$params[':year']  = $year;
-				break;
-			case 'week':
-				$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
-				$start = $ranges[$week][0] ?? 1;
-				$end   = $ranges[$week][1] ?? 7;
-				$filterClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year AND DAY(createdAt) BETWEEN :start AND :end";
-				$params[':month'] = $month;
-				$params[':year']  = $year;
-				$params[':start'] = $start;
-				$params[':end']   = $end;
-				break;
+		$dateClause = "";
+		if ($filter === 'now') {
+			$dateClause = "AND DATE(createdAt) = CURDATE()";
+		} elseif ($filter === 'month' && $month && $year) {
+			$dateClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year";
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
+			$start  = $ranges[$week][0];
+			$end    = $ranges[$week][1];
+			$dateClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year AND DAY(createdAt) BETWEEN :weekStart AND :weekEnd";
 		}
 
-		if ($type && in_array($type, $allowedTypes)) $params[':type'] = $type;
+		$params = [':adminId' => $this->adminId];
+		if ($search !== '')              $params[':search'] = '%' . $search . '%';
+		if ($transactionTypeClause !== '') $params[':type'] = $type;
+		if ($filter === 'month' && $month && $year) {
+			$params[':month'] = $month;
+			$params[':year']  = $year;
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$params[':month']     = $month;
+			$params[':year']      = $year;
+			$params[':weekStart'] = $start;
+			$params[':weekEnd']   = $end;
+		}
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM capital_transactions_tb
-        WHERE adminId = :adminId
-        $filterClause
-        $typeClause
-        ORDER BY $sortColumn $sortOrder
-        LIMIT :limit OFFSET :offset
-    ");
-
-		foreach ($params as $key => $value) {
-			$stmt->bindValue($key, $value);
-		}
-		$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+				SELECT * FROM capital_transactions_tb
+				WHERE adminId = :adminId
+				$searchClause
+				$transactionTypeClause
+				$dateClause
+				ORDER BY $sortColumn $sortOrder
+				LIMIT :limit OFFSET :offset
+			    ");
+		foreach ($params as $key => $value) $stmt->bindValue($key, $value);
+		$stmt->bindValue(':limit',  $limit,  PDO::PARAM_INT);
 		$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 		$stmt->execute();
-
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-		return array_map(fn($row) => new CapitalTransaction(
-			$row['type'],
-			$row['amount'],
-			$row['description'],
-			new DateTime($row['createdAt']),
-			(int)$row['id'],
-			(int)$row['adminId'],
-			(int) $row['saleId'],
-			(int) $row['inventoryId'],
-			(int) $row['quantity'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
 
-	public function countFiltered(?string $type = null, ?string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): int
+	public function countFiltered(?string $search = null, ?string $type = null, string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): int
 	{
-		$allowedTypes = ['sale', 'expense', 'restock', 'deposit'];
-		$typeClause = ($type && in_array($type, $allowedTypes)) ? "AND type = :type" : "";
+		$searchClause          = $search !== '' ? "AND description LIKE :search" : "";
+		$transactionTypeClause = ($type !== '' && in_array($type, $this->allowedTransactionTypes)) ? "AND type = :type" : "";
 
-		$filterClause = '';
-		$params = [':adminId' => $this->adminId];
-
-		switch ($filter) {
-			case 'now':
-				$filterClause = "AND DATE(createdAt) = CURDATE()";
-				break;
-			case 'month':
-				$filterClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year";
-				$params[':month'] = $month;
-				$params[':year']  = $year;
-				break;
-			case 'week':
-				$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
-				$start = $ranges[$week][0] ?? 1;
-				$end   = $ranges[$week][1] ?? 7;
-				$filterClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year AND DAY(createdAt) BETWEEN :start AND :end";
-				$params[':month'] = $month;
-				$params[':year']  = $year;
-				$params[':start'] = $start;
-				$params[':end']   = $end;
-				break;
+		$dateClause = "";
+		if ($filter === 'now') {
+			$dateClause = "AND DATE(createdAt) = CURDATE()";
+		} elseif ($filter === 'month' && $month && $year) {
+			$dateClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year";
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
+			$start  = $ranges[$week][0];
+			$end    = $ranges[$week][1];
+			$dateClause = "AND MONTH(createdAt) = :month AND YEAR(createdAt) = :year AND DAY(createdAt) BETWEEN :weekStart AND :weekEnd";
 		}
 
-		if ($type && in_array($type, $allowedTypes)) $params[':type'] = $type;
+		$params = [':adminId' => $this->adminId];
+		if ($search !== '')                $params[':search'] = '%' . $search . '%';
+		if ($transactionTypeClause !== '') $params[':type']   = $type;
+		if ($filter === 'month' && $month && $year) {
+			$params[':month'] = $month;
+			$params[':year']  = $year;
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$params[':month']     = $month;
+			$params[':year']      = $year;
+			$params[':weekStart'] = $start;
+			$params[':weekEnd']   = $end;
+		}
 
 		$stmt = $this->pdo->prepare("
-        SELECT COUNT(*) FROM capital_transactions_tb
-        WHERE adminId = :adminId
-        $filterClause
-        $typeClause ");
+			SELECT COUNT(*) FROM capital_transactions_tb  
+			WHERE adminId = :adminId
+			$searchClause
+			$transactionTypeClause
+			$dateClause
+		    ");
 		$stmt->execute($params);
 		return (int) $stmt->fetchColumn();
 	}
-
+	public function delete(int $id): void
+	{
+		$transaction = $this->findById($id);
+		$stmt = $this->pdo->prepare("
+			DELETE FROM capital_transactions_tb 
+			WHERE id = :id AND adminId = :adminId
+		    ");
+		$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
+		if ($transaction->getSaleId() !== null && $transaction->getType() == 'sale') {
+			$stmt2 = $this->pdo->prepare("
+				DELETE FROM sales_tb
+				WHERE id = :saleId AND adminId = :adminId
+		    ");
+			$stmt2->execute([':saleId' => $transaction->getSaleId(), ':adminId' => $this->adminId]);
+		}
+	}
+	private function mapToCapital(array $row): CapitalTransaction
+	{
+		return new CapitalTransaction(
+			type: $row['type'],
+			amount: $row['amount'],
+			description: $row['description'],
+			createdAt: new DateTime($row['createdAt']),
+			id: (int) $row['id'],
+			adminId: (int) $row['adminId'],
+			saleId: (int) $row['saleId'],
+			inventoryId: (int) $row['inventoryId'],
+			quantity: (int) $row['quantity'],
+		);
+	}
 }

@@ -18,12 +18,29 @@ class CapitalRepo extends BaseRepository
 
 		if (!$row) return null;
 
-		return new Capital(
-			$row['balance'],
-			$row['initialBalance'],
-			(int)$row['id'],
-			(int)$row['adminId'],
-		);
+		return $this->mapToCapitalAmount($row);
+	}
+	public function findByAdminId(int $adminId): ?Capital
+	{
+		$stmt = $this->pdo->prepare("SELECT * FROM capital_tb WHERE adminId=:adminId ");
+		$stmt->execute([':adminId' => $adminId]);
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+		if (!$row) return null;
+		return $this->mapToCapitalAmount($row);
+	}
+	public function updateInitialBalance(Capital $capital): void
+	{
+		$stmt = $this->pdo->prepare("
+        UPDATE capital_tb 
+        SET initialBalance = :initialBalance
+        WHERE id = :id AND adminId = :adminId
+    ");
+		$stmt->execute([
+			':initialBalance' => $capital->getInitialBalance(),
+			':id'             => $capital->getId(),
+			':adminId'        => $this->adminId,
+		]);
 	}
 
 
@@ -54,5 +71,15 @@ class CapitalRepo extends BaseRepository
 			':initialBalance' => $capital->getInitialBalance(),
 			':adminId' => $this->adminId,
 		]);
+	}
+
+	private function mapToCapitalAmount(array $row): Capital
+	{
+		return new Capital(
+			balance: $row['balance'],
+			initialBalance: $row['initialBalance'],
+			id: (int)$row['id'],
+			adminId: (int)$row['adminId'],
+		);
 	}
 }

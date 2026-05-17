@@ -2,9 +2,11 @@
 session_start();
 include_once("database.php");
 include_once("inventoryrepo.php");
+include_once("producttyperepo.php");
 
 $pdo = getPDO();
-$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id']);
+$productTypeRepo = new ProductTypeRepo($pdo, $_SESSION['admin_id']);
+$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
 
 $inventoryId = isset($_GET['inventory_id']) ? (int)$_GET['inventory_id'] : null;
 
@@ -91,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			required><br><br>
 		<label>Price</label><br>
 		<input type="number" name="price"
-			value="<?= $inventory->getPrice() ?>" step="0.01" min="0" required><br><br>
+			value="<?= $inventory->getPrice() ?>" step="0.01" min="1" required><br><br>
 
 
 		<button type="button"

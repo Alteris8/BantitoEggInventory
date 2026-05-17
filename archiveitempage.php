@@ -1,11 +1,11 @@
 <?php
 session_start();
 include_once("database.php");
-include_once("inventoryrepo.php");
+include_once("archiveitemrepo.php");
 include_once("producttyperepo.php");
 $pdo = getPDO();
 $productTypeRepo = new ProductTypeRepo($pdo, $_SESSION['admin_id']);
-$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
+$archiveRepo     = new ArchiveItemRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
 
 $sort        = $_GET['sort']        ?? 'lastUpdated';
 $order       = $_GET['order']       ?? 'DESC';
@@ -14,7 +14,6 @@ $search      = $_GET['search']      ?? '';
 $productType = $_GET['productType'] ?? null;
 $filter      = $_GET['filter']      ?? 'all';
 $error       = $_GET['error']       ?? null;
-$status = $_GET['status'] ?? null;
 
 $month       = filter_input(INPUT_GET, 'month', FILTER_VALIDATE_INT);
 $week        = filter_input(INPUT_GET, 'week',  FILTER_VALIDATE_INT);
@@ -44,72 +43,43 @@ $months = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-	$selectedId = isset($_POST['selected_id']) ? (int)$_POST['selected_id'] : null;
-	$sort  = $_POST['sort'] ?? 'name';
+	$sort  = $_POST['sort']  ?? 'lastUpdated';
 	$order = $_POST['order'] ?? 'DESC';
+
 	if (isset($_POST['backToLogin'])) {
 		header("Location: admintestpage.php");
 		exit();
 	}
-	if (isset($_POST['checkProductTypes'])) {
-		header("Location: producttypespage.php");
+	if (isset($_POST['return']) && isset($_POST['return_id'])) {
+		$id = (int)$_POST['return_id'];
+		$returnedArchive = $archiveRepo->findById($id);
+		$archiveRepo->transferToInventory($id, $returnedArchive);
+		header("Location: archiveitempage.php?sort=$sort&order=$order");
 		exit();
 	}
-
-	if (isset($_POST['create'])) {
-		header("Location: createinventorypage.php");
+	if (isset($_POST['delete']) && isset($_POST['delete_id'])) {
+		$id = (int)$_POST['delete_id'];
+		$archiveRepo->delete($id);
+		header("Location: archiveitempage.php?sort=$sort&order=$order");
 		exit();
 	}
-
-	if (!$selectedId && isset($_POST['edit'], $_POST['delete'], $_POST['processSales'])) {
-		header("Location: inventorypage.php?sort=$sort&order=$order&error=no_selection");
-		exit();
-	}
-
-	if (isset($_POST['edit'])) {
-		header("Location: editinventorypage.php?edit_id=$selectedId&sort=$sort&order=$order");
-		exit();
-	}
-
-	if (isset($_POST['archive'])) {
-		$selectedInventory = $inventoryRepo->findById($selectedId);
-		$inventoryRepo->transferToArchive($selectedId, $selectedInventory);
-		header("Location: inventorypage.php?sort=$sort&order=$order");
-		exit();
-	}
-
-	if (isset($_POST['processSales'])) {
-		$inventory = $inventoryRepo->findById($selectedId);
-
-		if ($inventory->getQuantity() < 1) {
-			header("Location: inventorypage.php?sort=$sort&order=$order&error=empty_quantity");
-			exit();
-		}
-
-		header("Location: processsalespage.php?inventory_id=$selectedId&sort=$sort&order=$order");
-		exit();
-	}
-
-	header("Location: inventorypage.php?sort=$sort&order=$order");
+	header("Location: archiveitempage.php?sort=$sort&order=$order");
 	exit();
 }
 
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $limit      = 10;
-$total       = $inventoryRepo->countFiltered($search, $productType ?? '', $filter, $month, $week, $year, $status);
+$total       = $archiveRepo->countFiltered($search, $productType ?? '', $filter, $month, $week, $year);
 $totalPages = (int)ceil($total / $limit);
-$inventories = $inventoryRepo->paginate($page, $limit, $sort, $order, $search, $productType ?? '', $filter, $month, $week, $year, $status ?? '');
-$inventoryTotalValue = $inventoryRepo->totalInventoryValue($filter, $month, $week, $year, $productType, $search, $status);
+$archives = $archiveRepo->paginate($page, $limit, $sort, $order, $search, $productType ?? '', $filter, $month, $week, $year);
 
-function inventoryUrl(array $overrides = []): string
+function archiveUrl(array $overrides = []): string
 {
 	$params = array_merge([
 		'sort'        => $GLOBALS['sort'],
 		'order'       => $GLOBALS['order'],
 		'search'      => $GLOBALS['search'],
 		'productType' => $GLOBALS['productType'],
-		'status'      => $GLOBALS['status'],
 		'filter'      => $GLOBALS['filter'],
 		'month'       => $GLOBALS['month'],
 		'week'        => $GLOBALS['week'],
@@ -118,25 +88,17 @@ function inventoryUrl(array $overrides = []): string
 	return '?' . http_build_query(array_filter($params, fn($v) => $v !== null && $v !== ''));
 }
 ?>
-
 <!DOCTYPE html>
 <html>
 
 <head>
 	<meta charset="UTF-8">
-	<title>Inventory</title>
+	<title>Archives</title>
 </head>
 
 <body>
+	<h1>Archive</h1>
 
-	<h1>Inventory</h1>
-	<h2>Total Inventory Value: ₱<?= number_format($inventoryTotalValue, 2) ?></h2>
-
-	<?php if ($error === 'no_selection'): ?>
-		<p>Please select an item first.</p>
-	<?php elseif ($error === 'empty_quantity'): ?>
-		<p>Item is out of stock.</p>
-	<?php endif; ?>
 	<form method="GET">
 		<input type="hidden" name="sort" value="<?= $sort ?>">
 		<input type="hidden" name="order" value="<?= $order ?>">
@@ -146,17 +108,10 @@ function inventoryUrl(array $overrides = []): string
 		<button type="submit">Search</button>
 	</form>
 
-
 	<form method="GET">
 		<input type="hidden" name="sort" value="<?= $sort ?>">
 		<input type="hidden" name="order" value="<?= $order ?>">
 		<input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
-		<select name="status" onchange="this.form.submit()">
-			<option value="">All Statuses</option>
-			<option value="Available" <?= $status === 'Available'    ? 'selected' : '' ?>>Available</option>
-			<option value="Low Stock" <?= $status === 'Low Stock'    ? 'selected' : '' ?>>Low Stock</option>
-			<option value="Out of Stock" <?= $status === 'Out of Stock' ? 'selected' : '' ?>>Out of Stock</option>
-		</select>
 
 		<label>Filter:</label>
 		<select name="filter" onchange="this.form.submit()">
@@ -200,69 +155,61 @@ function inventoryUrl(array $overrides = []): string
 		<?php endif; ?>
 	</form>
 
-	<form method="POST">
-
-		<input type="hidden" name="sort" value="<?= $sort ?>">
-		<input type="hidden" name="order" value="<?= $order ?>">
-
-		<button type="submit" name="create">Create</button>
-		<button type="submit" name="edit">Edit</button>
-		<button type="submit" name="archive" onclick="return confirm('Archive this item?')">Archive</button>
-		<button type="submit" name="processSales">Process Sales</button>
-		<button type="submit" name="checkProductTypes">Edit Product Types</button> <!-- //NOTE: Keep should be on top of the table, the rest just put them sa table-->
-
-		<table border="1">
-
-			<tr>
-				<th>Select</th>
-				<th>Name</th>
-				<th>Product Type</th>
-				<th>Quantity</th>
-				<th>Unit Price</th>
-				<th>Status</th>
-				<th>Last Updated</th>
-				<th>Actions</th>
-			</tr>
-
-			<?php if (!empty($inventories)): ?>
-				<?php foreach ($inventories as $inventory): ?>
-					<tr>
-						<td>
-							<input type="radio" name="selected_id" value="<?= $inventory->getId() ?>">
-						</td>
-						<td><?= htmlspecialchars($inventory->getProductName()) ?></td>
-						<td><?= htmlspecialchars($inventory->getProductType() ?? '—') ?></td>
-						<td><?= htmlspecialchars($inventory->getQuantity()) ?></td>
-						<td>₱<?= number_format($inventory->getPrice(), 2) ?></td>
-						<td><?= htmlspecialchars($inventory->getStatus()) ?></td>
-						<td><?= $inventory->getDateUpdated()->format('d-m-Y') ?></td>
-					</tr>
-				<?php endforeach; ?>
-			<?php else: ?>
+	<table border="1">
+		<tr>
+			<th>Name</th>
+			<th>Product Type</th>
+			<th>Quantity</th>
+			<th>>Price</th>
+			<th>Status</th>
+			<th>Last Updated</th>
+			<th>Actions</th>
+		</tr>
+		<?php if (!empty($archives)): ?>
+			<?php foreach ($archives as $archive): ?>
 				<tr>
-					<td colspan="6">Empty inventory</td>
+					<td><?= htmlspecialchars($archive->getProductName()) ?></td>
+					<td><?= htmlspecialchars($archive->getProductType() ?? '—') ?></td>
+					<td><?= htmlspecialchars($archive->getQuantity()) ?></td>
+					<td>₱<?= htmlspecialchars($archive->getPrice()) ?></td>
+					<td>Archived</td>
+					<td><?= $archive->getDateUpdated()->format('d-m-Y') ?></td>
+					<td>
+						<form method="POST" style="display:inline">
+							<input type="hidden" name="return_id" value="<?= $archive->getId() ?>">
+							<button type="submit" name="return">Return to Inventory</button>
+						</form>
+						<form method="POST" onsubmit="return confirm('Delete this item?')" style="display:inline">
+							<input type="hidden" name="delete_id" value="<?= $archive->getId() ?>">
+							<button type="submit" name="delete">Delete</button>
+						</form>
+					</td>
 				</tr>
-			<?php endif; ?>
+			<?php endforeach; ?>
+		<?php else: ?>
+			<tr>
+				<td colspan="7">Empty Archive</td>
+			</tr>
+		<?php endif; ?>
+	</table>
 
-		</table>
-		<input type="submit" name="backToLogin" value="Back to Login">
-
-	</form>
 	<?php if ($totalPages > 1): ?>
 		<div>
 			<?php if ($page > 1): ?>
-				<a href="<?= inventoryUrl(['page' => $page - 1]) ?>">&larr; Prev</a>
+				<a href="<?= archiveUrl(['page' => $page - 1]) ?>">&larr; Prev</a>
 			<?php endif; ?>
 			<?php for ($i = 1; $i <= $totalPages; $i++): ?>
-				<a href="<?= inventoryUrl(['page' => $i]) ?>" <?= $i === $page ? 'style="font-weight:bold"' : '' ?>>
+				<a href="<?= archiveUrl(['page' => $i]) ?>" <?= $i === $page ? 'style="font-weight:bold"' : '' ?>>
 					<?= $i ?>
 				</a>
 			<?php endfor; ?>
 			<?php if ($page < $totalPages): ?>
-				<a href="<?= inventoryUrl(['page' => $page + 1]) ?>">Next &rarr;</a>
+				<a href="<?= archiveUrl(['page' => $page + 1]) ?>">Next &rarr;</a>
 			<?php endif; ?>
 		</div>
 	<?php endif; ?>
+
+	<button onclick="window.location='admintestpage.php'">Back to Login</button>
 </body>
 
 </html>

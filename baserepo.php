@@ -3,6 +3,7 @@ abstract class BaseRepository
 {
 	protected PDO $pdo;
 	protected ?int $adminId;
+	protected array $allowedOrders = ['ASC', 'DESC'];
 
 	public function __construct(PDO $pdo, ?int $adminId = null)
 	{

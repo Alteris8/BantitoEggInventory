@@ -2,11 +2,20 @@
 include_once("database.php");
 include_once("sale.php");
 include_once("baserepo.php");
+include_once("producttyperepo.php");
 class SalesRepo extends BaseRepository
 {
+
+	private $allowedColumns = ['name', 'productType', 'price', 'dateSold', 'sale', 'productType'];
+	private $allowedProductTypes = [];
 	protected function table(): string
 	{
 		return 'sales_tb';
+	}
+	public function __construct(PDO $pdo, int $adminId, ?ProductTypeRepo $productTypeRepo = null)
+	{
+		parent::__construct($pdo, $adminId);
+		$this->allowedProductTypes = $productTypeRepo->findAllTypes();
 	}
 
 	public function findById(int $id): ?Sale
@@ -16,105 +25,86 @@ class SalesRepo extends BaseRepository
 		$row = $stmt->fetch(PDO::FETCH_ASSOC);
 		if (!$row) return null;
 
-		return new Sale(
-			$row['name'],
-			$row['itemsSold'],
-			$row['sale'],
-			new DateTime($row['dateSold']),
-			$row['inventoryId'],
-			$row['adminId'],
-			$row['id'],
-		);
+		return $this->mapToSale($row);
 	}
 
 	public function findAll(string $sortColumn = 'dateSold', string $sortOrder = 'DESC'): array
 	{
-		$allowedColumns = ['name', 'itemsSold', 'sale', 'dateSold', 'inventoryId'];
-		$allowedOrders = ['ASC', 'DESC'];
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
 
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'dateSold';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
-
-		$stmt = $this->pdo->query("SELECT * FROM sales_tb  WHERE adminId = $this->adminId ORDER BY $sortColumn $sortOrder ");
-		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new Sale(
-			$row['name'],
-			$row['itemsSold'],
-			$row['sale'],
-			new DateTime($row['dateSold']),
-			$row['inventoryId'],
-			$row['adminId'],
-			$row['id'],
-		), $rows);
-	}
-	public function findToday(string $sortColumn = 'dateSold', string $sortOrder = 'DESC'): array
-	{
-		$allowedColumns = ['name', 'itemsSold', 'sale', 'dateSold', 'inventoryId'];
-		$allowedOrders = ['ASC', 'DESC'];
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'dateSold';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
-
-		$stmt = $this->pdo->prepare("
-        SELECT * FROM sales_tb 
-        WHERE adminId = :adminId 
-        AND DATE(dateSold) = CURDATE()
-        ORDER BY $sortColumn $sortOrder
-    ");
+		$stmt = $this->pdo->prepare("SELECT * FROM sales_tb  WHERE adminId = :adminId ORDER BY $sortColumn $sortOrder ");
 		$stmt->execute([':adminId' => $this->adminId]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-		return array_map(fn($row) => new Sale(
-			$row['name'],
-			$row['itemsSold'],
-			$row['sale'],
-			new DateTime($row['dateSold']),
-			$row['inventoryId'],
-			$row['adminId'],
-			$row['id'],
-		), $rows);
+
+		return array_map(fn($row) => $this->mapToSale($row), $rows);
+	}
+	public function findSalesByToday(string $sortColumn = 'dateSold', string $sortOrder = 'DESC', ?string $productType = null, ?string $search = null): array
+	{
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
+		$productTypeClause = ($productType && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
+		$searchClause = $search !== '' ? "AND name LIKE :search" : "";
+
+		$stmt = $this->pdo->prepare("
+			SELECT * FROM sales_tb 
+			WHERE adminId = :adminId 
+		AND DATE(dateSold) = CURDATE() $productTypeClause
+			$searchClause 
+			ORDER BY $sortColumn $sortOrder
+		    ");
+		$params = [':adminId' => $this->adminId];
+		if ($productType && in_array($productType, $this->allowedProductTypes)) $params[':productType'] = $productType;
+		if ($search !== '') $params[':search'] = '%' . $search . '%';
+		$stmt->execute($params);
+		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
 
 
 
-	public function totalSales(string $filter, ?int $month = null, ?int $week = null, ?int $year = null): float
+	public function totalSales(string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, ?string $productType = null, ?string $search = null): float
 	{
-		$sql = "SELECT SUM(sale) as total FROM sales_tb WHERE adminId = :adminId";
-		$params = ['adminId' => $this->adminId];
+		$productTypeClause = ($productType && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
+		$searchClause      = $search !== '' ? "AND name LIKE :search" : "";
 
-		if ($filter === 'month') {
-			$sql .= " AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year";
-			$params['month'] = $month;
-			$params['year'] = $year;
+		$dateClause = "";
+		if ($filter === 'now') {
+			$dateClause = "AND DATE(dateSold) = CURDATE()";
+		} elseif ($filter === 'month' && $month && $year) {
+			$dateClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year";
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
+			$dateClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year AND DAY(dateSold) BETWEEN :start AND :end";
 		}
 
-		if ($filter === 'week') {
-			$ranges = [
-				1 => [1, 7],
-				2 => [8, 14],
-				3 => [15, 21],
-				4 => [22, 31],
-			];
+		$sql = "SELECT COALESCE(SUM(sale), 0) FROM sales_tb WHERE adminId = :adminId $productTypeClause $searchClause $dateClause";
 
-			$sql .= " AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year AND DAY(dateSold) BETWEEN :start AND :end";
-
-			$params['month'] = $month;
-			$params['year'] = $year;
-			$params['start'] = $ranges[$week][0];
-			$params['end'] = $ranges[$week][1];
+		$params = [':adminId' => $this->adminId];
+		if ($productType && in_array($productType, $this->allowedProductTypes)) $params[':productType'] = $productType;
+		if ($search !== '') $params[':search'] = '%' . $search . '%';
+		if ($filter === 'month' && $month && $year) {
+			$params[':month'] = $month;
+			$params[':year']  = $year;
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
+			$params[':month'] = $month;
+			$params[':year']  = $year;
+			$params[':start'] = $ranges[$week][0];
+			$params[':end']   = $ranges[$week][1];
 		}
 
 		$stmt = $this->pdo->prepare($sql);
 		$stmt->execute($params);
-
 		return (float)($stmt->fetchColumn() ?? 0);
 	}
 
-	public function findSalesByMonthWeek(int $month, int $week, int $year, string $sortColumn = 'dateSold', string $sortOrder = 'DESC'): array
+	public function findSalesByMonthWeek(int $month, int $week, int $year, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', ?string $productType = null, ?string $search = null): array
 	{
-		$allowedColumns = ['name', 'itemsSold', 'sale', 'dateSold', 'inventoryId'];
-		$allowedOrders = ['ASC', 'DESC'];
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'dateSold';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
+		$productTypeClause = ($productType && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
+		$searchClause = $search !== '' ? "AND name LIKE :search" : "";
 
 		$ranges = [
 			1 => [1, 7],
@@ -130,140 +120,71 @@ class SalesRepo extends BaseRepository
 		SELECT * FROM sales_tb 
 		WHERE MONTH(dateSold) = :month
 		AND YEAR(dateSold) = :year
-		AND DAY(dateSold) BETWEEN :start AND :end AND adminId = :adminId
+			AND DAY(dateSold) BETWEEN :start AND :end AND adminId = :adminId $productTypeClause
+			$searchClause
 		ORDER BY $sortColumn $sortOrder
-	");
+			");
 
-		$stmt->execute([
-			'month' => $month,
-			'year'  => $year,
-			'start' => $start,
-			'end'   => $end,
-			':adminId'   => $this->adminId,
-		]);
-
+		$params = [':month' => $month, ':year' => $year, ':start' => $start, ':end' => $end, ':adminId' => $this->adminId];
+		if ($productType && in_array($productType, $this->allowedProductTypes)) $params[':productType'] = $productType;
+		if ($search !== '') $params[':search'] = '%' . $search . '%';
+		$stmt->execute($params);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new Sale(
-			$row['name'],
-			$row['itemsSold'],
-			$row['sale'],
-			new DateTime($row['dateSold']),
-			$row['inventoryId'],
-			$row['adminId'],
-			$row['id'],
-
-		), $rows);
+		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
 
-	public function findSalesByMonth(int $month, int $year, string $sortColumn = 'dateSold', string $sortOrder = 'DESC'): array
+	public function findSalesByMonth(int $month, int $year, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', ?string $productType = null, ?string $search = null): array
 	{
-		$allowedColumns = ['name', 'itemsSold', 'sale', 'dateSold', 'inventoryId'];
-		$allowedOrders = ['ASC', 'DESC'];
-
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'dateSold';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
+		$productTypeClause = ($productType && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
+		$searchClause = $search !== '' ? "AND description LIKE :search" : "";
 
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM sales_tb
-        WHERE MONTH(dateSold) = :month
-        AND YEAR(dateSold) = :year AND adminId = :adminId
-        ORDER BY $sortColumn $sortOrder
-    ");
-		$stmt->execute([
-			':month' => $month,
-			':year' => $year,
-			':adminId' => $this->adminId,
-		]);
+			SELECT * FROM sales_tb
+			WHERE MONTH(dateSold) = :month
+			AND YEAR(dateSold) = :year AND adminId = :adminId $productTypeClause
+			$searchClause
+			ORDER BY $sortColumn $sortOrder
+		    ");
+		$params = [':month' => $month, ':year' => $year, ':adminId' => $this->adminId];
+		if ($productType && in_array($productType, $this->allowedProductTypes)) $params[':productType'] = $productType;
+		if ($search !== '') $params[':search'] = '%' . $search . '%';
+		$stmt->execute($params);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new Sale(
-			$row['name'],
-			$row['itemsSold'],
-			$row['sale'],
-			new DateTime($row['dateSold']),
-			$row['inventoryId'],
-			$row['adminId'],
-			$row['id'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
 
-	public function exportWeeklySales(int $month, int $week, int $year): array
+	public function findByProductType(string $productType, string $sortColumn = 'dateSold', string $sortOrder = 'DESC'): array
 	{
-
-		$ranges = [
-			1 => [1, 7],
-			2 => [8, 14],
-			3 => [15, 21],
-			4 => [22, 31],
-		];
-
-		$start = $ranges[$week][0];
-		$end   = $ranges[$week][1];
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
+		if (!in_array($productType, $this->allowedProductTypes)) return [];
 
 		$stmt = $this->pdo->prepare("
-		SELECT * FROM sales_tb 
-		WHERE MONTH(dateSold) = :month
-		AND YEAR(dateSold) = :year
-		AND DAY(dateSold) BETWEEN :start AND :end AND adminId = :adminId
-		ORDER BY name ASC
-	");
-
+				SELECT * FROM sales_tb 
+				WHERE adminId = :adminId 
+				AND productType = :productType
+				ORDER BY $sortColumn $sortOrder
+			    ");
 		$stmt->execute([
-			'month' => $month,
-			'year'  => $year,
-			'start' => $start,
-			'end'   => $end,
-			':adminId'   => $this->adminId,
-		]);
-
-		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new Sale(
-			$row['name'],
-			$row['itemsSold'],
-			$row['sale'],
-			new DateTime($row['dateSold']),
-			$row['inventoryId'],
-			$row['adminId'],
-			$row['id'],
-		), $rows);
-	}
-
-	public function exportSalesToday(): array
-	{
-
-		$stmt = $this->pdo->prepare("
-        SELECT * FROM sales_tb
-			WHERE DATE(dateSold) = CURDATE()
-			AND
-		       	adminId = :adminId
-	ORDER BY name ASC
-    ");
-		$stmt->execute([
-			':adminId' => $this->adminId,
+			':adminId'     => $this->adminId,
+			':productType' => $productType,
 		]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-		return array_map(fn($row) => new Sale(
-			$row['name'],
-			$row['itemsSold'],
-			$row['sale'],
-			new DateTime($row['dateSold']),
-			$row['inventoryId'],
-			$row['adminId'],
-			$row['id'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
 
 	public function save(Sale $sale): void
 	{
-		$stmt = $this->pdo->prepare("INSERT INTO sales_tb (inventoryId, name, itemsSold, sale, dateSold, adminId)
-			VALUES (:inventoryId, :name, :itemsSold, :sale, :dateSold, :adminId)");
+		$stmt = $this->pdo->prepare("INSERT INTO sales_tb (inventoryId, price, name, productType, itemsSold, sale, dateSold, adminId)
+			VALUES (:inventoryId, :price, :name, :productType, :itemsSold, :sale, :dateSold, :adminId)");
 		$stmt->execute([
 			':inventoryId' => $sale->getInventoryId(),
+			':price' => $sale->getPrice(),
 			':name' => $sale->getProductName(),
+			':productType' => $sale->getProductType(),
 			':itemsSold' => $sale->getItemsSold(),
 			':sale' => $sale->getSale(),
 			':dateSold' => $sale->getDate()->format('Y-m-d'),
@@ -271,99 +192,152 @@ class SalesRepo extends BaseRepository
 
 		]);
 	}
+	public function searchSale(string $productName): ?array
+	{
+		$stmt = $this->pdo->prepare("
+			SELECT * FROM sales_tb 
+			WHERE name LIKE :name AND adminId = :adminId
+		");
 
-	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', ?string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
+		$stmt->execute([
+			':name' => '%' . $productName . '%',
+			':adminId' => $this->adminId,
+		]);
+
+		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+		if (!$rows) return null;
+		return array_map(fn($row) => $this->mapToSale($row), $rows);
+	}
+	public function delete(int $id): void
+	{
+		$stmt = $this->pdo->prepare("
+			DELETE FROM sales_tb WHERE id = :id AND adminId = :adminId
+			");
+
+		$stmt->execute([
+			':id' => $id,
+			':adminId' => $this->adminId
+		]);
+
+		$stmt2 = $this->pdo->prepare("
+		    DELETE FROM capital_transactions_tb 
+		    WHERE saleId = :saleId 
+		    AND adminId = :adminId 
+		    AND type = 'sale'
+		");
+		$stmt2->execute([
+			':saleId' => $id,
+			':adminId' => $this->adminId
+		]);
+	}
+
+	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
 	{
 		$offset = ($page - 1) * $limit;
-		$allowedColumns = ['name', 'itemsSold', 'sale', 'dateSold', 'inventoryId'];
-		$allowedOrders = ['ASC', 'DESC'];
+		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
+		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
 
-		if (!in_array($sortColumn, $allowedColumns)) $sortColumn = 'dateSold';
-		if (!in_array(strtoupper($sortOrder), $allowedOrders)) $sortOrder = 'DESC';
+		$searchClause = $search !== '' ? "AND name LIKE :search" : "";
+		$typeClause   = ($productType !== '' && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
 
-		$filterClause = '';
+		$dateClause = "";
+		if ($filter === 'now') {
+			$dateClause = "AND DATE(dateSold) = CURDATE()";
+		} elseif ($filter === 'month' && $month && $year) {
+			$dateClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year";
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
+			$start  = $ranges[$week][0];
+			$end    = $ranges[$week][1];
+			$dateClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year AND DAY(dateSold) BETWEEN :weekStart AND :weekEnd";
+		}
+
 		$params = [':adminId' => $this->adminId];
-
-		switch ($filter) {
-			case 'now':
-				$filterClause = "AND DATE(dateSold) = CURDATE()";
-				break;
-			case 'month':
-				$filterClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year";
-				$params[':month'] = $month;
-				$params[':year']  = $year;
-				break;
-			case 'week':
-				$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
-				$start = $ranges[$week][0] ?? 1;
-				$end   = $ranges[$week][1] ?? 7;
-				$filterClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year AND DAY(dateSold) BETWEEN :start AND :end";
-				$params[':month'] = $month;
-				$params[':year']  = $year;
-				$params[':start'] = $start;
-				$params[':end']   = $end;
-				break;
+		if ($search !== '')     $params[':search']      = '%' . $search . '%';
+		if ($typeClause !== '') $params[':productType'] = $productType;
+		if ($filter === 'month' && $month && $year) {
+			$params[':month'] = $month;
+			$params[':year']  = $year;
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$params[':month']    = $month;
+			$params[':year']     = $year;
+			$params[':weekStart'] = $start;
+			$params[':weekEnd']   = $end;
 		}
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM sales_tb
-        WHERE adminId = :adminId
-        $filterClause
-        ORDER BY $sortColumn $sortOrder
-        LIMIT :limit OFFSET :offset
-    ");
-
+				SELECT * FROM sales_tb
+				WHERE adminId = :adminId
+				$searchClause
+				$typeClause
+				$dateClause
+				ORDER BY $sortColumn $sortOrder
+				LIMIT :limit OFFSET :offset
+			    ");
 		foreach ($params as $key => $value) {
 			$stmt->bindValue($key, $value);
 		}
-		$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+		$stmt->bindValue(':limit',  $limit,  PDO::PARAM_INT);
 		$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 		$stmt->execute();
-
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-		return array_map(fn($row) => new Sale(
-			$row['name'],
-			$row['itemsSold'],
-			$row['sale'],
-			new DateTime($row['dateSold']),
-			$row['inventoryId'],
-			$row['adminId'],
-			$row['id'],
-		), $rows);
+		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
 
-	public function countFiltered(?string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): int
-	{
-		$filterClause = '';
-		$params = [':adminId' => $this->adminId];
 
-		switch ($filter) {
-			case 'now':
-				$filterClause = "AND DATE(dateSold) = CURDATE()";
-				break;
-			case 'month':
-				$filterClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year";
-				$params[':month'] = $month;
-				$params[':year']  = $year;
-				break;
-			case 'week':
-				$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
-				$start = $ranges[$week][0] ?? 1;
-				$end   = $ranges[$week][1] ?? 7;
-				$filterClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year AND DAY(dateSold) BETWEEN :start AND :end";
-				$params[':month'] = $month;
-				$params[':year']  = $year;
-				$params[':start'] = $start;
-				$params[':end']   = $end;
-				break;
+
+	public function countFiltered(string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): int
+	{
+		$searchClause = $search !== '' ? "AND name LIKE :search" : "";
+		$typeClause   = ($productType !== '' && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
+
+		$dateClause = "";
+		if ($filter === 'now') {
+			$dateClause = "AND DATE(dateSold) = CURDATE()";
+		} elseif ($filter === 'month' && $month && $year) {
+			$dateClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year";
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$ranges = [1 => [1, 7], 2 => [8, 14], 3 => [15, 21], 4 => [22, 31]];
+			$start  = $ranges[$week][0];
+			$end    = $ranges[$week][1];
+			$dateClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year AND DAY(dateSold) BETWEEN :weekStart AND :weekEnd";
+		}
+
+		$params = [':adminId' => $this->adminId];
+		if ($search !== '')     $params[':search']      = '%' . $search . '%';
+		if ($typeClause !== '') $params[':productType'] = $productType;
+		if ($filter === 'month' && $month && $year) {
+			$params[':month'] = $month;
+			$params[':year']  = $year;
+		} elseif ($filter === 'week' && $month && $week && $year) {
+			$params[':month']     = $month;
+			$params[':year']      = $year;
+			$params[':weekStart'] = $start;
+			$params[':weekEnd']   = $end;
 		}
 
 		$stmt = $this->pdo->prepare("
-        SELECT COUNT(*) FROM sales_tb
-        WHERE adminId = :adminId
-        $filterClause
-    ");
+			SELECT COUNT(*) FROM sales_tb
+			WHERE adminId = :adminId
+			$searchClause
+			$typeClause
+			$dateClause
+		    ");
 		$stmt->execute($params);
-		return (int) $stmt->fetchColumn();
+		return (int)$stmt->fetchColumn();
+	}
+	private function mapToSale(array $row): Sale
+	{
+		return new Sale(
+			productName: $row['name'],
+			itemsSold: (int)$row['itemsSold'],
+			sale: (float)$row['sale'],
+			price: (float)$row['price'],
+			date: new DateTime($row['dateSold']),
+			productType: $row['productType'],
+			inventoryId: (int)$row['inventoryId'],
+			adminId: (int)$row['adminId'],
+			id: (int)$row['id'],
+		);
 	}
 }

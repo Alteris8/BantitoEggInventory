@@ -6,7 +6,9 @@ class Sale
 		private readonly string $productName,
 		private readonly int $itemsSold,
 		private readonly float $sale,
+		private readonly ?float $price = null,
 		private readonly ?DateTime $date = null,
+		private readonly ?string $productType = null,
 		private readonly ?int $inventoryId = null,
 		private readonly ?int $adminId = null,
 		private readonly ?int $id = null,
@@ -30,10 +32,18 @@ class Sale
 	{
 		return $this->productName;
 	}
+	public function getProductType(): ?string
+	{
+		return $this->productType;
+	}
 
 	public function getItemsSold(): int
 	{
 		return $this->itemsSold;
+	}
+	public function getPrice(): ?float
+	{
+		return $this->price;
 	}
 
 	public function getSale(): float

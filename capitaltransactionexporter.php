@@ -12,7 +12,8 @@ class CapitalTransactionExporter
 		array $inventories,
 		string $filename,
 		float $balance,
-		array $summary
+		array $summary,
+		float $salesTotalFromSalesRepo
 	): void {
 		$spreadsheet = new Spreadsheet();
 
@@ -32,18 +33,20 @@ class CapitalTransactionExporter
 
 		$salesSheet = $spreadsheet->createSheet();
 		$salesSheet->setTitle('Sales');
-		$salesSheet->fromArray(['Product', 'Items Sold', 'Amount', 'Date Sold'], null, 'A1');
+		$salesSheet->fromArray(['Product', 'Product Type', 'Unit Price', 'Items Sold', 'Amount', 'Date Sold'], null, 'A1');
 		$row = 2;
 		foreach ($sales as $sale) {
 			$salesSheet->fromArray([
 				$sale->getProductName(),
+				$sale->getProductType(),
+				$sale->getPrice(),
 				$sale->getItemsSold(),
 				$sale->getSale(),
 				$sale->getDate()->format('d-m-Y'),
 			], null, "A{$row}");
 			$row++;
 		}
-		$salesSheet->fromArray(['', '', $summary['totalSales']], null, "A{$row}");
+		$salesSheet->fromArray(['', 'Total: ',  $salesTotalFromSalesRepo], null, "A{$row}");
 
 		$depositSheet = $spreadsheet->createSheet();
 		$depositSheet->setTitle('Deposits');
@@ -78,16 +81,9 @@ class CapitalTransactionExporter
 		$restockSheet->fromArray(['Product', 'Quantity', 'Cost', 'Date'], null, 'A1');
 		$row = 2;
 		foreach ($grouped['restock'] as $t) {
-			$matchedInventory = null;
-			foreach ($inventories as $inv) {
-				if ($inv->getProductName() === $t->getDescription()) {
-					$matchedInventory = $inv;
-					break;
-				}
-			}
 			$restockSheet->fromArray([
 				$t->getDescription(),
-				$matchedInventory ? $matchedInventory->getQuantity() : 'N/A',
+				$t->getQuantity() ?? 'N/A',
 				$t->getAmount(),
 				$t->getCurrentDate()->format('d-m-Y'),
 			], null, "A{$row}");
@@ -97,18 +93,25 @@ class CapitalTransactionExporter
 
 		$inventorySheet = $spreadsheet->createSheet();
 		$inventorySheet->setTitle('Inventory');
-		$inventorySheet->fromArray(['Product', 'Quantity', 'Price', 'Status', 'Last Updated'], null, 'A1');
+		$inventorySheet->fromArray(['Product', 'Quantity', 'Product Type', 'Price', 'Status', 'Last Updated'], null, 'A1');
 		$row = 2;
 		foreach ($inventories as $inv) {
 			$inventorySheet->fromArray([
 				$inv->getProductName(),
 				$inv->getQuantity(),
+				$inv->getProductType(),
 				$inv->getPrice(),
 				$inv->getStatus(),
 				$inv->getDateUpdated()->format('d-m-Y'),
 			], null, "A{$row}");
 			$row++;
 		}
+		$totalInventoryValue = array_reduce(
+			$inventories,
+			fn($carry, $inv) => $carry + ($inv->getQuantity() * $inv->getPrice()),
+			0.0
+		);
+		$inventorySheet->fromArray(['Total Value', $totalInventoryValue], null, "A{$row}");
 
 		$spreadsheet->setActiveSheetIndex(0);
 		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

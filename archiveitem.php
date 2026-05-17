@@ -1,5 +1,5 @@
 <?php
-class Inventory
+class ArchiveItem
 {
 
 	function __construct(
@@ -21,13 +21,13 @@ class Inventory
 	{
 		return $this->adminId;
 	}
-	public function getProductType(): ?string
-	{
-		return $this->productType;
-	}
 	public function getProductName(): string
 	{
 		return $this->productName;
+	}
+	public function getProductType(): ?string
+	{
+		return $this->productType;
 	}
 
 	public function getQuantity(): int
