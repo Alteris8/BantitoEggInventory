@@ -2,10 +2,13 @@
 session_start();
 include_once("database.php");
 include_once("salerepo.php");
+include_once("inventoryrepo.php");
+include_once("capitaltransactionsrepo.php");
 include_once("producttyperepo.php");
 $pdo = getPDO();
 $productTypeRepo = new ProductTypeRepo($pdo, $_SESSION['admin_id']);
 $saleRepo = new SalesRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
+$inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
 $capitalTransactionRepo = new CapitalTransactionRepo($pdo, $_SESSION['admin_id']);
 
 $sort        = $_GET['sort']        ?? 'dateSold';
@@ -14,6 +17,7 @@ $nextOrder   = $order === 'ASC' ? 'DESC' : 'ASC';
 $search      = $_GET['search']      ?? '';
 $productType = $_GET['productType'] ?? null;
 $filter      = $_GET['filter']      ?? 'all';
+$statusFilter      = $_GET['statusFilter'] ?? 'active';
 $error       = $_GET['error']       ?? null;
 
 $month       = filter_input(INPUT_GET, 'month', FILTER_VALIDATE_INT);
@@ -52,10 +56,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	}
 	if (isset($_POST['void']) && isset($_POST['void_id'])) {
 		$id = (int)$_POST['void_id'];
-		$saleRepo->delete($id);
+		$saleRepo->voidSale($id);
 		$capitalTransactionRepo->recalculateBalance();
-		header("Location: salespage.php?sort=$sort&order=$order");
+		var_dump($saleRepo->findAll());
+		var_dump($inventoryRepo->findAll());
 		exit();
+		/* header("Location: salespage.php?sort=$sort&order=$order"); */
+		/* exit(); */
 	}
 
 	if (isset($_POST['backToLogin'])) {
@@ -66,9 +73,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $limit      = 10;
-$total       = $saleRepo->countFiltered($search, $productType ?? '', $filter, $month, $week, $year);
+$total       = $saleRepo->countFiltered($search, $productType ?? '', $filter, $month, $week, $year, $statusFilter);
 $totalPages = (int)ceil($total / $limit);
-$sales = $saleRepo->paginate($page, $limit, $sort, $order, $search, $productType ?? '', $filter, $month, $week, $year);
+$sales = $saleRepo->paginate($page, $limit, $sort, $order, $search, $productType ?? '', $filter, $month, $week, $year, $statusFilter);
 $salesTotal = $saleRepo->totalSales($filter, $month, $week, $year, $productType ?? '', $search);
 function saleUrl(array $overrides = []): string
 {
@@ -78,6 +85,7 @@ function saleUrl(array $overrides = []): string
 		'search'      => $GLOBALS['search'],
 		'productType' => $GLOBALS['productType'],
 		'filter'      => $GLOBALS['filter'],
+		'statusFilter' => $GLOBALS['statusFilter'],
 		'month'       => $GLOBALS['month'],
 		'week'        => $GLOBALS['week'],
 		'year'        => $GLOBALS['year'],
@@ -440,8 +448,8 @@ function saleUrl(array $overrides = []): string
 					<td><?= htmlspecialchars($sale->getDate()->format('d-m-Y')) ?></td>
 					<td>
 						<form method="POST" onsubmit="return confirm('Void this transaction?')" style="display:inline">
-							<input type="hidden" name="delete_id" value="<?= $sale->getId() ?>">
-							<button type="submit" name="delete">Void</button>
+							<input type="hidden" name="void_id" value="<?= $sale->getId() ?>">
+							<button type="submit" name="void">Void</button>
 						</form>
 					</td>
 				</tr>

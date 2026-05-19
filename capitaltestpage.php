@@ -4,11 +4,13 @@ include_once("database.php");
 include_once("capitaltransactionsrepo.php");
 include_once("capitaltransaction.php");
 include_once("capitalrepo.php");
+include_once("salerepo.php");
 include_once("capital.php");
 
 $pdo = getPDO();
 $capitalTransactionsRepo = new CapitalTransactionRepo($pdo, $_SESSION['admin_id']);
-$capitalRepo             = new CapitalRepo($pdo, $_SESSION['admin_id']);
+$saleRepo = new SalesRepo($pdo, $_SESSION['admin_id']);
+$capitalRepo = new CapitalRepo($pdo, $_SESSION['admin_id']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	$sort  = $_POST['sort']  ?? 'createdAt';
@@ -47,13 +49,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		header("Location: " . $_SERVER['PHP_SELF']);
 		exit();
 	}
+	if (isset($_POST['void']) && isset($_POST['void_id'])) {
+		$selectedId = (int)$_POST['void_id'];
+		$transaction = $capitalTransactionsRepo->findById($selectedId);
+		if ($transaction->getType() == 'restock' || $transaction->getType() == 'sale') {
+			$capitalTransactionsRepo->voidTransaction($selectedId, $saleRepo);
+		} else {
+			$capitalTransactionsRepo->voidTransaction($selectedId);
+		}
+		$capitalTransactionsRepo->recalculateBalance();
+		header("Location: " . $_SERVER['PHP_SELF']);
+		exit();
+	}
 
 	header("Location: capitaltestpage.php?sort=$sort&order=$order");
 	exit();
 }
 
-$sort            = $_GET['sort']            ?? 'createdAt';
-$order           = $_GET['order']           ?? 'DESC';
+
+
+$sort  = $_POST['sort']  ?? $_GET['sort']  ?? 'createdAt';
+$order = $_POST['order'] ?? $_GET['order'] ?? 'DESC';
 $nextOrder       = $order === 'ASC' ? 'DESC' : 'ASC';
 $search          = $_GET['search']          ?? '';
 $transactionType = $_GET['transactionType'] ?? null;
@@ -117,14 +133,14 @@ function transactionUrl(array $overrides = []): string
 
 <body>
 
-	<?php if ($capital->getBalance() == 0): ?>
+	<?php if ($capital->getInitialBalance() == 0): ?>
 		<form method="post" action="capitaltestpage.php">
 			<label>Input hands-on money: </label>
 			<input type="number" name="newCapitalAmount" step="0.01" min="0"
-				value="<?= htmlspecialchars($capital->getInitialBalance()) ?>" required> <input type="submit" name="capitalSubmit" value="Submit">
+				value="<?= htmlspecialchars($capital->getInitialBalance()) ?>" required>
+			<input type="submit" name="capitalSubmit" value="Submit">
 		</form>
 	<?php else: ?>
-
 		<form method="post" action="capitaltestpage.php">
 			<div id="viewMode">
 				<label>Balance: PHP<?= htmlspecialchars($capital->getBalance()) ?></label>
@@ -235,9 +251,9 @@ function transactionUrl(array $overrides = []): string
 						<td><?= htmlspecialchars($transaction->getType()) ?></td>
 						<td><?= $transaction->getCurrentDate()->format('d-m-Y') ?></td>
 						<td>
-							<form method="post" action="capitaltestpage.php" onsubmit="return confirm('Delete transaction?')" style="display: inline;">
-								<input type="hidden" name="delete_id" value="<?= $transaction->getId() ?>">
-								<input type="submit" name="delete" value="Delete">
+							<form method="post" action="capitaltestpage.php" onsubmit="return confirm('Void this transaction?')" style="display: inline;">
+								<input type="hidden" name="void_id" value="<?= $transaction->getId() ?>">
+								<input type="submit" name="void" value="Void">
 							</form>
 
 						</td>
@@ -275,7 +291,7 @@ function transactionUrl(array $overrides = []): string
 				<input type="hidden" name="month" value="<?= $month ?>">
 				<input type="hidden" name="week" value="<?= $week ?>">
 				<input type="hidden" name="year" value="<?= $year ?>">
-				<input type="hidden" name="type" value="<?= htmlspecialchars($type ?? '') ?>">
+				<input type="hidden" name="transactionType" value="<?= htmlspecialchars($type ?? '') ?>">
 				<input type="hidden" name="search" value="<?= htmlspecialchars($search ?? '') ?>">
 				<button type="submit">Export Capital Report</button>
 			</form>

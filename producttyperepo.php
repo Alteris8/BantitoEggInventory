@@ -20,7 +20,8 @@ class ProductTypeRepo extends BaseRepository
 	}
 	public function findAll(string $sortOrder = 'DESC'): array
 	{
-		$stmt = $this->pdo->query("SELECT * FROM product_types_tb  WHERE adminId = $this->adminId ORDER BY type $sortOrder");
+		$stmt = $this->pdo->prepare("SELECT * FROM product_types_tb WHERE adminId = :adminId ORDER BY type $sortOrder");
+		$stmt->execute([':adminId' => $this->adminId]);
 
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

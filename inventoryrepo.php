@@ -11,7 +11,7 @@ class InventoryRepo extends BaseRepository
 	public function __construct(PDO $pdo, int $adminId, ?ProductTypeRepo $productTypeRepo = null)
 	{
 		parent::__construct($pdo, $adminId);
-		$this->allowedProductTypes = $productTypeRepo->findAllTypes();
+		$this->allowedProductTypes = $productTypeRepo?->findAllTypes();
 	}
 
 	protected function table(): string
@@ -211,14 +211,12 @@ class InventoryRepo extends BaseRepository
 		$salesAmount = $pricePerUnit * $amount;
 		$currentDate = date('Y-m-d');
 
-
-
 		$this->pdo->beginTransaction();
 		try {
 			$stmt = $this->pdo->prepare("
 			SELECT id, itemsSold, sale FROM sales_tb
 			WHERE inventoryId = :inventoryId
-			AND DATE(dateSold) = :currentDate AND adminId = :adminId");
+			AND DATE(dateSold) = :currentDate AND adminId = :adminId AND status = 'active'");
 			$stmt->execute([
 				':inventoryId' => $id,
 				':currentDate' => $currentDate,
@@ -286,7 +284,7 @@ class InventoryRepo extends BaseRepository
 				$stmt->execute([
 					':adminId' => $this->adminId,
 					':amount' => $salesAmount,
-					':description' => $item->getProductName(),
+					':description' => $item->getProductName()  . "(" . $item->getQuantity() . ")",
 					':saleId' => $newSaleId,
 				]);
 			}
@@ -296,7 +294,6 @@ class InventoryRepo extends BaseRepository
 			throw $e;
 		}
 	}
-
 
 	public function save(Inventory $inventory): void
 	{

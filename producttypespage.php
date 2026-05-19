@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		header("Location: admintestpage.php");
 		exit();
 	}
-	if ($_POST['create']) {
+	if (isset($_POST['create'])) {
 		header("Location: createproducttypespage.php");
 		exit();
 	}
@@ -96,24 +96,25 @@ $productTypes = $productTypeRepo->paginate($page, $limit, $order);
 				<td colspan="1">Empty product types</td>
 			</tr>
 		<?php endif; ?>
-		<?php if ($totalPages > 1): ?>
-			<div>
-				<?php if ($page > 1): ?>
-					<a href="<?= inventoryUrl(['page' => $page - 1]) ?>">&larr; Prev</a>
-				<?php endif; ?>
-				<?php for ($i = 1; $i <= $totalPages; $i++): ?>
-					<a href="<?= inventoryUrl(['page' => $i]) ?>" <?= $i === $page ? 'style="font-weight:bold"' : '' ?>>
-						<?= $i ?>
-					</a>
-				<?php endfor; ?>
-				<?php if ($page < $totalPages): ?>
-					<a href="<?= inventoryUrl(['page' => $page + 1]) ?>">Next &rarr;</a>
-				<?php endif; ?>
-			</div>
-		<?php endif; ?>
 
 
 	</table>
+	<?php if ($totalPages > 1): ?>
+		<div>
+			<?php if ($page > 1): ?>
+				<a href="<?= productTypeUrl(['page' => $page - 1]) ?>">&larr; Prev</a>
+			<?php endif; ?>
+			<?php for ($i = 1; $i <= $totalPages; $i++): ?>
+				<a href="<?= productTypeUrl(['page' => $i]) ?>" <?= $i === $page ? 'style="font-weight:bold"' : '' ?>>
+					<?= $i ?>
+				</a>
+			<?php endfor; ?>
+			<?php if ($page < $totalPages): ?>
+				<a href="<?= productTypeUrl(['page' => $page + 1]) ?>">Next &rarr;</a>
+			<?php endif; ?>
+		</div>
+	<?php endif; ?>
+
 	<form action="producttypespage.php" method="post">
 		<input type="submit" name="backToLogin" value="Back to Login">
 	</form>

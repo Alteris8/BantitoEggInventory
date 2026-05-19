@@ -31,6 +31,7 @@ class CapitalTransactionExporter
 		$sheet->fromArray(['Total Restocks', $summary['totalRestocks']], null, 'A5');
 		$sheet->fromArray(['Net Income',     $summary['netIncome']],     null, 'A6');
 
+		//Salesexporter.php
 		$salesSheet = $spreadsheet->createSheet();
 		$salesSheet->setTitle('Sales');
 		$salesSheet->fromArray(['Product', 'Product Type', 'Unit Price', 'Items Sold', 'Amount', 'Date Sold'], null, 'A1');
@@ -47,6 +48,7 @@ class CapitalTransactionExporter
 			$row++;
 		}
 		$salesSheet->fromArray(['',  '', '', 'Total: ',  $salesTotalFromSalesRepo], null, "A{$row}");
+		//END
 
 		$depositSheet = $spreadsheet->createSheet();
 		$depositSheet->setTitle('Deposits');
@@ -91,6 +93,7 @@ class CapitalTransactionExporter
 		}
 		$restockSheet->fromArray(['Total', '', $summary['totalRestocks']], null, "A{$row}");
 
+		//Inventoryexporter.php
 		$inventorySheet = $spreadsheet->createSheet();
 		$inventorySheet->setTitle('Inventory');
 		$inventorySheet->fromArray(['Product', 'Quantity', 'Product Type', 'Price', 'Status', 'Last Updated'], null, 'A1');
@@ -112,6 +115,7 @@ class CapitalTransactionExporter
 			0.0
 		);
 		$inventorySheet->fromArray(['Total Value', $totalInventoryValue], null, "A{$row}");
+		//END
 
 		$spreadsheet->setActiveSheetIndex(0);
 		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

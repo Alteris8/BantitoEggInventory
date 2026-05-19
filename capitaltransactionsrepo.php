@@ -1,6 +1,7 @@
 <?php
 include_once("database.php");
 include_once("baserepo.php");
+include_once("sale.php");
 include_once("capitaltransaction.php");
 
 class CapitalTransactionRepo extends BaseRepository
@@ -30,7 +31,9 @@ class CapitalTransactionRepo extends BaseRepository
 
 		$stmt = $this->pdo->prepare("
 			SELECT * FROM capital_transactions_tb
-			WHERE adminId = :adminId ORDER BY $sortColumn $sortOrder
+			WHERE adminId = :adminId 
+			AND status = 'active'
+			ORDER BY $sortColumn $sortOrder
 			");
 		$stmt->execute([':adminId' => $this->adminId]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -49,6 +52,7 @@ class CapitalTransactionRepo extends BaseRepository
 			WHERE MONTH(createdAt) = :month
 			AND YEAR(createdAt) = :year 
 			AND adminId = :adminId
+			AND status = 'active'
 			$transactionTypeClause
 			$searchClause
 			ORDER BY $sortColumn $sortOrder
@@ -60,7 +64,6 @@ class CapitalTransactionRepo extends BaseRepository
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
-
 
 
 	public function findCapitalTransactionsByMonthWeek(int $month, int $week, int $year, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', ?string $type = null, string $search = ''): array
@@ -78,6 +81,7 @@ class CapitalTransactionRepo extends BaseRepository
 			WHERE MONTH(createdAt) = :month
 			AND YEAR(createdAt) = :year
 			AND DAY(createdAt) BETWEEN :start AND :end
+			AND status = 'active'
 			AND adminId = :adminId
 			$transactionTypeClause
 			$searchClause
@@ -103,6 +107,7 @@ class CapitalTransactionRepo extends BaseRepository
 			SELECT * FROM capital_transactions_tb 
 			WHERE adminId = :adminId 
 			AND DATE(createdAt) = CURDATE()
+			AND status = 'active'
 			$transactionTypeClause
 			$searchClause
 			ORDER BY $sortColumn $sortOrder
@@ -114,7 +119,7 @@ class CapitalTransactionRepo extends BaseRepository
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
-	public function findByType(string $type, string $sortColumn = 'createdAt', string $sortOrder = 'DESC'): array
+	public function findByType(string $type, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', string $statusFilter = 'actvie'): array
 	{
 		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'createdAt';
 		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
@@ -124,11 +129,13 @@ class CapitalTransactionRepo extends BaseRepository
 				SELECT * FROM capital_transactions_tb 
 				WHERE adminId = :adminId 
 				AND type = :type
+				AND status = :statusFilter
 				ORDER BY $sortColumn $sortOrder
 			    ");
 		$stmt->execute([
 			':adminId' => $this->adminId,
 			':type'    => $type,
+			':statusFilter'    => $statusFilter
 		]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		return array_map(fn($row) => $this->mapToCapital($row), $rows);
@@ -208,10 +215,10 @@ class CapitalTransactionRepo extends BaseRepository
 
 		$stmt = $this->pdo->prepare("
 			SELECT 
-			    SUM(CASE WHEN type = 'sale'    THEN amount ELSE 0 END) AS totalSales,
-			    SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END) AS totalDeposits,
-			    SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS totalExpenses,
-			    SUM(CASE WHEN type = 'restock' THEN amount ELSE 0 END) AS totalRestocks
+			    SUM(CASE WHEN type = 'sale' AND (status IS NULL OR status != 'voided') THEN amount ELSE 0 END) AS totalSales,
+			    SUM(CASE WHEN type = 'deposit' AND (status IS NULL OR status != 'voided') THEN amount ELSE 0 END) AS totalDeposits,
+			    SUM(CASE WHEN type = 'expense' AND (status IS NULL OR status != 'voided') THEN amount ELSE 0 END) AS totalExpenses,
+			    SUM(CASE WHEN type = 'restock' AND (status IS NULL OR status != 'voided') THEN amount ELSE 0 END) AS totalRestocks
 			FROM capital_transactions_tb
 			WHERE adminId = :adminId
 			$searchClause $typeClause $dateClause
@@ -231,30 +238,171 @@ class CapitalTransactionRepo extends BaseRepository
 	public function recalculateBalance(): void
 	{
 		$stmt = $this->pdo->prepare("
-		UPDATE capital_tb c
-		JOIN (
-		    SELECT 
-			adminId,
-			COALESCE(
-			    SUM(CASE WHEN type = 'sale'    THEN amount ELSE 0 END)
-			  + SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END)
-			  - SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END)
-			  - SUM(CASE WHEN type = 'restock' THEN amount ELSE 0 END)
-			, 0) AS netIncome
-		    FROM capital_transactions_tb
-		    WHERE adminId = :adminId_sub
-		    GROUP BY adminId
-		) t ON c.adminId = t.adminId
-		SET c.balance = c.initialBalance + t.netIncome
-		WHERE c.adminId = :adminId_main
-	    ");
+			UPDATE capital_tb
+			SET balance = initialBalance + COALESCE((
+			    SELECT 
+				SUM(CASE WHEN type = 'sale' AND (status IS NULL OR status != 'voided') THEN amount ELSE 0 END)
+			      + SUM(CASE WHEN type = 'deposit' AND (status IS NULL OR status != 'voided') THEN amount ELSE 0 END) 
+			      - SUM(CASE WHEN type = 'expense' AND (status IS NULL OR status != 'voided') THEN amount ELSE 0 END) 
+			      - SUM(CASE WHEN type = 'restock' AND (status IS NULL OR status != 'voided') THEN amount ELSE 0 END) 
+			    FROM capital_transactions_tb
+			    WHERE adminId = :adminId_sub
+			), 0)
+			WHERE adminId = :adminId_main
+		    ");
 		$stmt->execute([
 			':adminId_sub'  => $this->adminId,
 			':adminId_main' => $this->adminId,
 		]);
 	}
 
-	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', string $search = '', string $type = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
+	public function voidTransaction(int $id, ?SalesRepo $saleRepo = null): void
+	{
+		$transaction = $this->findById($id);
+		$sale = $saleRepo?->findById($transaction->getSaleId());
+		if ($transaction->getSaleId() !== null && $transaction->getType() == 'sale') {
+			$this->pdo->beginTransaction();
+			try {
+				$stmt = $this->pdo->prepare("
+			    UPDATE sales_tb SET status = 'voided'
+			    WHERE id = :id AND adminId = :adminId
+			");
+				$stmt->execute([':id' => $transaction->getSaleId(), ':adminId' => $this->adminId]);
+
+				$stmt = $this->pdo->prepare("
+			    UPDATE capital_transactions_tb SET status = 'voided'
+					WHERE 
+					id = :id AND
+					saleId = :saleId AND adminId = :adminId
+			");
+				$stmt->execute([
+					':id' => $id,
+					':saleId' => $transaction->getSaleId(),
+					':adminId' => $this->adminId
+				]);
+
+				$stmt = $this->pdo->prepare("
+			    UPDATE inventory_tb SET quantity = quantity + :quantitySold
+			    WHERE id = :inventoryId AND adminId = :adminId
+			");
+				$stmt->execute([
+					':quantitySold' => $sale->getItemsSold(),
+					':inventoryId'  => $sale->getInventoryId(),
+					':adminId'      => $this->adminId
+				]);
+
+				$this->pdo->commit();
+			} catch (Exception $e) {
+				$this->pdo->rollBack();
+				throw $e;
+			}
+		} elseif ($transaction->getType() == 'restock') {
+			$this->pdo->beginTransaction();
+			try {
+				$stmt = $this->pdo->prepare("
+			    UPDATE capital_transactions_tb SET status = 'voided'
+			    WHERE id = :id AND adminId = :adminId
+			");
+				$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
+
+				$stmt = $this->pdo->prepare("
+			    UPDATE inventory_tb SET quantity = quantity - :voidedQuantity
+			    WHERE id = :inventoryId AND adminId = :adminId
+			");
+				$stmt->execute([
+					':inventoryId' => $transaction->getInventoryId(),
+					':adminId' => $this->adminId,
+					':voidedQuantity' => $transaction->getQuantity()
+				]);
+
+				$this->pdo->commit();
+			} catch (Exception $e) {
+				$this->pdo->rollBack();
+				throw $e;
+			}
+		} else {
+			$stmt = $this->pdo->prepare("
+			    UPDATE capital_transactions_tb SET status = 'voided'
+			    WHERE id = :id AND adminId = :adminId
+			");
+			$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
+		}
+	}
+
+	public function makeTransactionActive(int $id, ?SalesRepo $saleRepo = null): void
+	{
+		$transaction = $this->findById($id);
+		$sale = $saleRepo->findById($transaction->getSaleId());
+		if ($transaction->getSaleId() !== null && $transaction->getType() == 'sale') {
+			$this->pdo->beginTransaction();
+			try {
+				$stmt = $this->pdo->prepare("
+			    UPDATE sales_tb SET status = 'active'
+			    WHERE id = :id AND adminId = :adminId
+			");
+				$stmt->execute([':id' => $transaction->getSaleId(), ':adminId' => $this->adminId]);
+
+				$stmt = $this->pdo->prepare("
+			    UPDATE capital_transactions_tb SET status = 'active'
+					WHERE 
+					id = :id AND
+					saleId = :saleId AND adminId = :adminId
+			");
+				$stmt->execute([
+					':id' => $id,
+					':saleId' => $$transaction->getSaleId(),
+					':adminId' => $this->adminId
+				]);
+
+				$stmt = $this->pdo->prepare("
+			    UPDATE inventory_tb SET quantity = quantity - :quantitySold
+			    WHERE id = :inventoryId AND adminId = :adminId
+			");
+				$stmt->execute([
+					':quantitySold' => $sale->getItemsSold(),
+					':inventoryId'  => $sale->getInventoryId(),
+					':adminId'      => $this->adminId
+				]);
+
+				$this->pdo->commit();
+			} catch (Exception $e) {
+				$this->pdo->rollBack();
+				throw $e;
+			}
+		} elseif ($transaction->getType() == 'restock') {
+			$this->pdo->beginTransaction();
+			try {
+				$stmt = $this->pdo->prepare("
+			    UPDATE capital_transactions_tb SET status = 'active'
+			    WHERE id = :id AND adminId = :adminId
+			");
+				$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
+
+				$stmt = $this->pdo->prepare("
+			    UPDATE inventory_tb SET quantity = quantity + :voidedQuantity
+			    WHERE id = :inventoryId AND adminId = :adminId
+			");
+				$stmt->execute([
+					':inventoryId' => $transaction->getInventoryId(),
+					':adminId' => $this->adminId,
+					':quantity' => $transaction->getQuantity()
+				]);
+
+				$this->pdo->commit();
+			} catch (Exception $e) {
+				$this->pdo->rollBack();
+				throw $e;
+			}
+		} else {
+			$stmt = $this->pdo->prepare("
+			    UPDATE capital_transactions_tb SET status = 'active'
+			    WHERE id = :id AND adminId = :adminId
+			");
+			$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
+		}
+	}
+
+	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'createdAt', string $sortOrder = 'DESC', string $search = '', string $type = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, string $statusFilter = 'active'): array
 	{
 		$offset = ($page - 1) * $limit;
 		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'createdAt';
@@ -262,6 +410,7 @@ class CapitalTransactionRepo extends BaseRepository
 
 		$searchClause = ($search !== null && $search !== '') ? "AND description LIKE :search" : "";
 		$transactionTypeClause = ($type !== '' && in_array($type, $this->allowedTransactionTypes)) ? "AND type = :type" : "";
+		$statusClause = "AND status = :statusFilter";
 
 		$dateClause = "";
 		if ($filter === 'now') {
@@ -287,6 +436,7 @@ class CapitalTransactionRepo extends BaseRepository
 			$params[':weekStart'] = $start;
 			$params[':weekEnd']   = $end;
 		}
+		$params[':statusFilter'] = $statusFilter;
 
 		$stmt = $this->pdo->prepare("
 				SELECT * FROM capital_transactions_tb
@@ -294,6 +444,7 @@ class CapitalTransactionRepo extends BaseRepository
 				$searchClause
 				$transactionTypeClause
 				$dateClause
+				$statusClause
 				ORDER BY $sortColumn $sortOrder
 				LIMIT :limit OFFSET :offset
 			    ");
@@ -305,10 +456,11 @@ class CapitalTransactionRepo extends BaseRepository
 		return array_map(fn($row) => $this->mapToCapital($row), $rows);
 	}
 
-	public function countFiltered(?string $search = null, ?string $type = null, string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): int
+	public function countFiltered(?string $search = null, ?string $type = null, string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, string $statusFilter = 'active'): int
 	{
 		$searchClause          = $search !== '' ? "AND description LIKE :search" : "";
 		$transactionTypeClause = ($type !== '' && in_array($type, $this->allowedTransactionTypes)) ? "AND type = :type" : "";
+		$statusClause = "AND status = :statusFilter";
 
 		$dateClause = "";
 		if ($filter === 'now') {
@@ -334,6 +486,7 @@ class CapitalTransactionRepo extends BaseRepository
 			$params[':weekStart'] = $start;
 			$params[':weekEnd']   = $end;
 		}
+		$params[':statusFilter'] = $statusFilter;
 
 		$stmt = $this->pdo->prepare("
 			SELECT COUNT(*) FROM capital_transactions_tb  
@@ -341,6 +494,7 @@ class CapitalTransactionRepo extends BaseRepository
 			$searchClause
 			$transactionTypeClause
 			$dateClause
+			$statusClause
 		    ");
 		$stmt->execute($params);
 		return (int) $stmt->fetchColumn();

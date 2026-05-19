@@ -93,6 +93,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				type: 'restock',
 				amount: (float)$cost,
 				description: $inventory->getProductName(),
+				createdAt: null,
+				id: null,
+				adminId: null,
+				saleId: null,
+				inventoryId: $selectedId,
+				quantity: $restockQuantity,
 			));
 			$capitalTransactionsRepo->recalculateBalance();
 			$pdo->commit();

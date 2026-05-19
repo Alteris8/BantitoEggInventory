@@ -15,7 +15,7 @@ class SalesRepo extends BaseRepository
 	public function __construct(PDO $pdo, int $adminId, ?ProductTypeRepo $productTypeRepo = null)
 	{
 		parent::__construct($pdo, $adminId);
-		$this->allowedProductTypes = $productTypeRepo->findAllTypes();
+		$this->allowedProductTypes = $productTypeRepo?->findAllTypes();
 	}
 
 	public function findById(int $id): ?Sale
@@ -33,7 +33,7 @@ class SalesRepo extends BaseRepository
 		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
 		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
 
-		$stmt = $this->pdo->prepare("SELECT * FROM sales_tb  WHERE adminId = :adminId ORDER BY $sortColumn $sortOrder ");
+		$stmt = $this->pdo->prepare("SELECT * FROM sales_tb  WHERE adminId = :adminId AND status = 'active' ORDER BY $sortColumn $sortOrder ");
 		$stmt->execute([':adminId' => $this->adminId]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -50,7 +50,7 @@ class SalesRepo extends BaseRepository
 			SELECT * FROM sales_tb 
 			WHERE adminId = :adminId 
 		AND DATE(dateSold) = CURDATE() $productTypeClause
-			$searchClause 
+			$searchClause AND status = 'active'
 			ORDER BY $sortColumn $sortOrder
 		    ");
 		$params = [':adminId' => $this->adminId];
@@ -60,7 +60,6 @@ class SalesRepo extends BaseRepository
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
-
 
 
 	public function totalSales(string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, ?string $productType = null, ?string $search = null): float
@@ -120,7 +119,7 @@ class SalesRepo extends BaseRepository
 		SELECT * FROM sales_tb 
 		WHERE MONTH(dateSold) = :month
 		AND YEAR(dateSold) = :year
-			AND DAY(dateSold) BETWEEN :start AND :end AND adminId = :adminId $productTypeClause
+			AND DAY(dateSold) BETWEEN :start AND :end AND adminId = :adminId AND status = 'active' $productTypeClause
 			$searchClause
 		ORDER BY $sortColumn $sortOrder
 			");
@@ -138,25 +137,26 @@ class SalesRepo extends BaseRepository
 		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
 		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
 		$productTypeClause = ($productType && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
-		$searchClause = $search !== '' ? "AND description LIKE :search" : "";
-
+		$searchClause = ($search !== null && $search !== '') ? "AND name LIKE :search" : "";
 
 		$stmt = $this->pdo->prepare("
 			SELECT * FROM sales_tb
 			WHERE MONTH(dateSold) = :month
-			AND YEAR(dateSold) = :year AND adminId = :adminId $productTypeClause
+			AND YEAR(dateSold) = :year AND adminId = :adminId 
+			AND status = 'active'
+			$productTypeClause
 			$searchClause
 			ORDER BY $sortColumn $sortOrder
 		    ");
 		$params = [':month' => $month, ':year' => $year, ':adminId' => $this->adminId];
 		if ($productType && in_array($productType, $this->allowedProductTypes)) $params[':productType'] = $productType;
-		if ($search !== '') $params[':search'] = '%' . $search . '%';
+		if ($search !== null && $search !== '') $params[':search'] = '%' . $search . '%';
 		$stmt->execute($params);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
 
-	public function findByProductType(string $productType, string $sortColumn = 'dateSold', string $sortOrder = 'DESC'): array
+	public function findByProductType(string $productType, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', string $statusFilter = 'active'): array
 	{
 		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
 		if (!in_array(strtoupper($sortOrder), $this->allowedOrders)) $sortOrder = 'DESC';
@@ -165,12 +165,14 @@ class SalesRepo extends BaseRepository
 		$stmt = $this->pdo->prepare("
 				SELECT * FROM sales_tb 
 				WHERE adminId = :adminId 
-				AND productType = :productType
+			AND productType = :productType
+			AND status = :statusFilter
 				ORDER BY $sortColumn $sortOrder
 			    ");
 		$stmt->execute([
 			':adminId'     => $this->adminId,
 			':productType' => $productType,
+			':statusFilter' => $statusFilter
 		]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		return array_map(fn($row) => $this->mapToSale($row), $rows);
@@ -199,9 +201,42 @@ class SalesRepo extends BaseRepository
 		$this->pdo->beginTransaction();
 		try {
 			$stmt = $this->pdo->prepare("
+		    UPDATE sales_tb SET status = 'voided'
+		    WHERE id = :id AND adminId = :adminId
+		");
+			$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
+
+			$stmt = $this->pdo->prepare("
+		    UPDATE capital_transactions_tb SET status = 'voided'
+		    WHERE saleId = :saleId AND adminId = :adminId
+		");
+			$stmt->execute([':saleId' => $id, ':adminId' => $this->adminId]);
+
+			$stmt = $this->pdo->prepare("
+		    UPDATE inventory_tb SET quantity = quantity + :quantitySold
+		    WHERE id = :inventoryId AND adminId = :adminId
+		");
+			$stmt->execute([
+				':quantitySold' => $sale->getItemsSold(),
+				':inventoryId'  => $sale->getInventoryId(),
+				':adminId'      => $this->adminId
+			]);
+
+			$this->pdo->commit();
+		} catch (Exception $e) {
+			$this->pdo->rollBack();
+			throw $e;
+		}
+	}
+
+	public function makeSaleActive(int $id): void
+	{
+		$sale = $this->findById($id);
+		$this->pdo->beginTransaction();
+		try {
+			$stmt = $this->pdo->prepare("
 			UPDATE sales_tb
-			SET status = 'voided',
-				originalSaleId = :id
+			SET status = 'active'
 				WHERE id = :id AND
 				adminId = :adminId
 		");
@@ -212,7 +247,7 @@ class SalesRepo extends BaseRepository
 			]);
 			$stmt = $this->pdo->prepare("
 			UPDATE capital_transactions_tb
-			SET status = 'voided'
+			SET status = 'active'
 				WHERE saleId = :saleId AND
 				adminId = :adminId
 		");
@@ -224,8 +259,8 @@ class SalesRepo extends BaseRepository
 
 			$stmt = $this->pdo->prepare("
 			UPDATE inventory_tb
-			SET quantity = quantity + :quantitySold
-			WHERE id = :inventoryId AND 
+			SET quantity = quantity - :quantitySold
+			WHERE inventoryId = :inventoryId AND 
 			adminId = :adminId
 			");
 			$stmt->execute([
@@ -233,98 +268,25 @@ class SalesRepo extends BaseRepository
 				':inventoryId' => $id,
 				':adminId' => $this->adminId
 			]);
-		} catch (\Throwable $th) {
-			//throw $th;
+			$this->pdo->commit();
+		} catch (Exception $e) {
+			$this->pdo->rollBack();
+			throw $e;
 		}
 	}
 
-	public function makeSaleActive(int $id): void
-	{
-		$sale = $this->findById($id);
-		$stmt = $this->pdo->prepare("
-			UPDATE sales_tb
-			SET status = 'active'
-				WHERE id = :id AND
-				adminId = :adminId
-		");
-
-		$stmt->execute([
-			':id' => $id,
-			':adminId' => $this->adminId
-		]);
-		$stmt = $this->pdo->prepare("
-			UPDATE capital_transactions_tb
-			SET status = 'active'
-				WHERE saleId = :saleId AND
-				adminId = :adminId
-		");
-
-		$stmt->execute([
-			':saleId' => $id,
-			':adminId' => $this->adminId
-		]);
-
-		$stmt = $this->pdo->prepare("
-			UPDATE inventory_tb
-			SET quantity = quantity - :quantitySold
-			WHERE inventoryId = :inventoryId AND 
-			adminId = :adminId
-			");
-		$stmt->execute([
-			':quantitySold' => $sale->getItemsSold(),
-			':inventoryId' => $id,
-			':adminId' => $this->adminId
-		]);
-	}
-
-	public function correctSale(int $id): void
-	{
-		$sale = $this->findById($id);
-		$stmt = $this->pdo->prepare("
-			UPDATE sales_tb
-			SET status = 'corrected'
-				WHERE id = :id AND
-				adminId = :adminId
-		");
-
-		$stmt->execute([
-			':id' => $id,
-			':adminId' => $this->adminId
-		]);
-		$stmt = $this->pdo->prepare("
-			UPDATE capital_transactions_tb
-			SET status = 'corrected'
-				WHERE saleId = :saleId AND
-				adminId = :adminId
-		");
-
-		$stmt->execute([
-			':saleId' => $id,
-			':adminId' => $this->adminId
-		]);
-
-		$stmt = $this->pdo->prepare("
-			UPDATE inventory_tb
-			SET quantity = quantity + :quantitySold
-			WHERE inventoryId = :inventoryId AND 
-			adminId = :adminId
-			");
-		$stmt->execute([
-			':quantitySold' => $sale->getItemsSold(),
-			':inventoryId' => $id,
-			':adminId' => $this->adminId
-		]);
-	}
-	public function searchSale(string $productName): ?array
+	public function searchSale(string $productName, string $statusFilter = 'active'): ?array
 	{
 		$stmt = $this->pdo->prepare("
 			SELECT * FROM sales_tb 
 			WHERE name LIKE :name AND adminId = :adminId
+			AND status = :statusFilter
 		");
 
 		$stmt->execute([
 			':name' => '%' . $productName . '%',
 			':adminId' => $this->adminId,
+			':statusFilter' => $statusFilter
 		]);
 
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -336,20 +298,20 @@ class SalesRepo extends BaseRepository
 		$this->pdo->beginTransaction();
 		try {
 			$stmt = $this->pdo->prepare("
-            DELETE FROM sales_tb 
-            WHERE originalSaleId = :id AND adminId = :adminId
-        ");
+		    DELETE FROM sales_tb 
+		    WHERE originalSaleId = :id AND adminId = :adminId
+		");
 			$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
 
 			$stmt = $this->pdo->prepare("
-            DELETE FROM sales_tb WHERE id = :id AND adminId = :adminId
-        ");
+		    DELETE FROM sales_tb WHERE id = :id AND adminId = :adminId
+		");
 			$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
 
 			$stmt = $this->pdo->prepare("
-            DELETE FROM capital_transactions_tb 
-            WHERE saleId = :saleId AND adminId = :adminId AND type = 'sale'
-        ");
+		    DELETE FROM capital_transactions_tb 
+		    WHERE saleId = :saleId AND adminId = :adminId AND type = 'sale'
+		");
 			$stmt->execute([':saleId' => $id, ':adminId' => $this->adminId]);
 
 			$this->pdo->commit();
@@ -359,7 +321,7 @@ class SalesRepo extends BaseRepository
 		}
 	}
 
-	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
+	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, string $statusFilter = 'active'): array
 	{
 		$offset = ($page - 1) * $limit;
 		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'dateSold';
@@ -367,6 +329,7 @@ class SalesRepo extends BaseRepository
 
 		$searchClause = $search !== '' ? "AND name LIKE :search" : "";
 		$typeClause   = ($productType !== '' && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
+		$statusClause = "AND status = :statusFilter";
 
 		$dateClause = "";
 		if ($filter === 'now') {
@@ -392,6 +355,7 @@ class SalesRepo extends BaseRepository
 			$params[':weekStart'] = $start;
 			$params[':weekEnd']   = $end;
 		}
+		$params[':statusFilter'] = $statusFilter;
 
 		$stmt = $this->pdo->prepare("
 				SELECT * FROM sales_tb
@@ -399,7 +363,8 @@ class SalesRepo extends BaseRepository
 				$searchClause
 				$typeClause
 				$dateClause
-				ORDER BY $sortColumn $sortOrder
+				$statusClause
+				ORDER BY $sortColumn $sortOrder 
 				LIMIT :limit OFFSET :offset
 			    ");
 		foreach ($params as $key => $value) {
@@ -412,10 +377,11 @@ class SalesRepo extends BaseRepository
 		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
 
-	public function countFiltered(string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): int
+	public function countFiltered(string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, string $statusFilter = 'active'): int
 	{
 		$searchClause = $search !== '' ? "AND name LIKE :search" : "";
 		$typeClause   = ($productType !== '' && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
+		$statusClause = "AND status = :statusFilter";
 
 		$dateClause = "";
 		if ($filter === 'now') {
@@ -441,6 +407,7 @@ class SalesRepo extends BaseRepository
 			$params[':weekStart'] = $start;
 			$params[':weekEnd']   = $end;
 		}
+		$params[':statusFilter'] = $statusFilter;
 
 		$stmt = $this->pdo->prepare("
 			SELECT COUNT(*) FROM sales_tb
@@ -448,6 +415,7 @@ class SalesRepo extends BaseRepository
 			$searchClause
 			$typeClause
 			$dateClause
+			$statusClause
 		    ");
 		$stmt->execute($params);
 		return (int)$stmt->fetchColumn();
@@ -458,7 +426,6 @@ class SalesRepo extends BaseRepository
 			productName: $row['name'],
 			itemsSold: (int)$row['itemsSold'],
 			sale: (float)$row['sale'],
-			status: $row['status'],
 			price: (float)$row['price'],
 			date: new DateTime($row['dateSold']),
 			productType: $row['productType'],

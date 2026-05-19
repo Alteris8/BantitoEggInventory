@@ -50,7 +50,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$capitalTransactionsRepo->save(new CapitalTransaction(
 				type: 'restock',
 				amount: (float)$cost,
-				description: $inventory->getProductName(),
+				description: $inventory->getProductName() . "(" . $restockQuantity . ")",
+				createdAt: null,
+				id: null,
+				adminId: null,
+				saleId: null,
+				inventoryId: $selectedId,
+				quantity: $restockQuantity,
 			));
 			$capitalTransactionsRepo->recalculateBalance();
 			$pdo->commit();
