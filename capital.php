@@ -20,10 +20,10 @@ class Capital
 	}
 	public function getId(): ?int
 	{
-		return $this->id;
+		return $this->id ?? null;
 	}
 	public function getAdminId(): ?int
 	{
-		return $this->adminId;
+		return $this->adminId ?? null;
 	}
 }

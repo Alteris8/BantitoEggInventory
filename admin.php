@@ -8,12 +8,12 @@ class Admin
 		public readonly string $username,
 		public readonly string $password,
 		public readonly ?int $id = null,
-		public readonly ?DateTime $dateSold = null,
+		public readonly ?DateTime $createdAt = null,
 	) {}
 
-	public function getId(): int
+	public function getId(): ?int
 	{
-		return $this->id;
+		return $this->id ?? null;
 	}
 
 	public function getUsername(): string
@@ -32,8 +32,8 @@ class Admin
 		return $this->password;
 	}
 
-	public function getCreatedAt(): DateTime
+	public function getCreatedAt(): ?DateTime
 	{
-		return $this->dateSold;
+		return $this->createdAt ?? null;
 	}
 }

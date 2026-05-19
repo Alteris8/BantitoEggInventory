@@ -132,9 +132,9 @@ function transactionUrl(array $overrides = []): string
 			</div>
 
 			<div id="editMode" style="display:none;">
-				<label>Balance: PHP</label>
+				<label>Initial Balance: PHP</label>
 				<input type="number" name="newCapitalAmount" step="0.01" min="0"
-					value="<?= htmlspecialchars($capital->getBalance()) ?>" required>
+					value="<?= htmlspecialchars($capital->getInitialBalance()) ?>" required>
 				<button type="submit" name="capitalSubmit">Save</button>
 				<button type="button" onclick="toggleEdit(false)">Cancel</button>
 			</div>
@@ -269,16 +269,19 @@ function transactionUrl(array $overrides = []): string
 		<form method="post" action="capitaltestpage.php">
 			<input type="submit" name="backToLogin" value="Back to Login">
 		</form>
+		<?php if (!empty($transactions)): ?>
+			<form method="GET" action="export.php">
+				<input type="hidden" name="filter" value="<?= $filter ?>">
+				<input type="hidden" name="month" value="<?= $month ?>">
+				<input type="hidden" name="week" value="<?= $week ?>">
+				<input type="hidden" name="year" value="<?= $year ?>">
+				<input type="hidden" name="type" value="<?= htmlspecialchars($type ?? '') ?>">
+				<input type="hidden" name="search" value="<?= htmlspecialchars($search ?? '') ?>">
+				<button type="submit">Export Capital Report</button>
+			</form>
 
-		<form method="GET" action="export.php">
-			<input type="hidden" name="filter" value="<?= $filter ?>">
-			<input type="hidden" name="month" value="<?= $month ?>">
-			<input type="hidden" name="week" value="<?= $week ?>">
-			<input type="hidden" name="year" value="<?= $year ?>">
-			<input type="hidden" name="type" value="<?= htmlspecialchars($type ?? '') ?>">
-			<input type="hidden" name="search" value="<?= htmlspecialchars($search ?? '') ?>">
-			<button type="submit">Export Capital Report</button>
-		</form>
+		<?php endif; ?>
+
 
 
 	<?php endif; ?>

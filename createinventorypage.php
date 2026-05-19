@@ -14,11 +14,21 @@ $message = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 	$productName = filter_input(INPUT_POST, "product_name", FILTER_SANITIZE_FULL_SPECIAL_CHARS);
-	$price = filter_input(INPUT_POST, "price", FILTER_SANITIZE_NUMBER_FLOAT,  FILTER_FLAG_ALLOW_FRACTION);
-	$quantity = filter_input(INPUT_POST, "quantity", FILTER_SANITIZE_NUMBER_INT);
+	$price = filter_input(INPUT_POST, "price", FILTER_VALIDATE_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
+	$quantity = filter_input(INPUT_POST, "quantity", FILTER_VALIDATE_INT);
 	$productType = $_POST['productType'] ?? null;
 
 	if (isset($_POST['submit'])) {
+		if (!$productType) {
+			$errorMessage = "Please select a product type";
+			header("Location: " . $_SERVER['PHP_SELF']);
+			exit();
+		}
+		if ($inventoryRepo->findByProductName($productName) !== null) {
+			$errorMessage = "Inventory already exists";
+			header("Location: " . $_SERVER['PHP_SELF']);
+			exit();
+		}
 		$inventory = new Inventory(
 			$productName,
 			(int)$quantity,
@@ -423,12 +433,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 		<label>Type:</label>
 		<select name="productType">
-			<option value="">-</option>
+			<option value="" disabled selected>Select a type</option>
 			<?php foreach ($allProductTypes as $type): ?>
-				<option value="<?= htmlspecialchars($type) ?>" <?= $type === $type ? 'selected' : '' ?>>
+				<option value="<?= htmlspecialchars($type) ?>"
+					<?= $type === ($productType ?? '') ? 'selected' : '' ?>>
 					<?= htmlspecialchars($type) ?>
-				</option>
-			<?php endforeach; ?>
+				</option> <?php endforeach; ?>
 		</select>
 
 

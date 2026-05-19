@@ -1,11 +1,11 @@
 <?php
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	if (isset($_POST['login'])) {
-		header("Location: adminlogin.php");
+		header("Location: adminloginpage.php");
 		exit();
 	}
 	if (isset($_POST['register'])) {
-		header("Location: adminregister.php");
+		header("Location: adminregisterpage.php");
 		exit();
 	}
 }

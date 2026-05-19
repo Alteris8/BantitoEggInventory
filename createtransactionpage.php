@@ -22,7 +22,7 @@ $search      = $_GET['search']      ?? '';
 $productType = $_GET['productType'] ?? null;
 $filter      = $_GET['filter']      ?? 'all';
 $error       = $_GET['error']       ?? null;
-$status = $_GET['status'] ?? null;
+$status = isset($_GET['status']) && is_array($_GET['status']) ? $_GET['status'] : [];
 $type = $_GET['type'] ?? $_POST['type'] ?? '';
 
 $month       = filter_input(INPUT_GET, 'month', FILTER_VALIDATE_INT);
@@ -126,10 +126,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $limit      = 10;
-$total       = $inventoryRepo->countFiltered($search, $productType ?? '', $filter, $month, $week, $year, $status);
+$total = $inventoryRepo->countFiltered($search, $productType ?? '', $filter, $month, $week, $year, $status);
 $totalPages = (int)ceil($total / $limit);
-$inventories = $inventoryRepo->paginate($page, $limit, $sort, $order, $search, $productType ?? '', $filter, $month, $week, $year, $status ?? '');
+$inventories = $inventoryRepo->paginate($page, $limit, $sort, $order, $search, $productType ?? '', $filter, $month, $week, $year, $status);
 $inventoryTotalValue = $inventoryRepo->totalInventoryValue($filter, $month, $week, $year, $productType, $search, $status);
+
 function inventoryUrl(array $overrides = []): string
 {
 	$params = array_merge([
@@ -143,7 +144,9 @@ function inventoryUrl(array $overrides = []): string
 		'week'        => $GLOBALS['week'],
 		'year'        => $GLOBALS['year'],
 	], $overrides);
-	return '?' . http_build_query(array_filter($params, fn($v) => $v !== null && $v !== ''));
+
+	$params = array_filter($params, fn($v) => $v !== null && $v !== '' && $v !== []);
+	return '?' . http_build_query($params);
 }
 
 ?>
@@ -175,13 +178,17 @@ function inventoryUrl(array $overrides = []): string
 			<input type="hidden" name="sort" value="<?= $sort ?>">
 			<input type="hidden" name="order" value="<?= $order ?>">
 			<input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
-			<select name="status" onchange="this.form.submit()">
-				<option value="">All Statuses</option>
-				<option value="Available" <?= $status === 'Available'    ? 'selected' : '' ?>>Available</option>
-				<option value="Low Stock" <?= $status === 'Low Stock'    ? 'selected' : '' ?>>Low Stock</option>
-				<option value="Out of Stock" <?= $status === 'Out of Stock' ? 'selected' : '' ?>>Out of Stock</option>
-			</select>
-
+			<fieldset>
+				<legend>Status</legend>
+				<?php foreach (['Available', 'Low Stock', 'Out of Stock'] as $s): ?>
+					<label>
+						<input type="checkbox" name="status[]" value="<?= $s ?>"
+							<?= in_array($s, $status) ? 'checked' : '' ?>
+							onchange="this.form.submit()">
+						<?= $s ?>
+					</label>
+				<?php endforeach; ?>
+			</fieldset>
 			<label>Filter:</label>
 			<select name="filter" onchange="this.form.submit()">
 				<option value="all" <?= $filter === 'all'   ? 'selected' : '' ?>>All</option>
@@ -292,6 +299,63 @@ function inventoryUrl(array $overrides = []): string
 			<input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Search...">
 			<button type="submit">Search</button>
 		</form>
+		<form method="GET">
+			<input type="hidden" name="sort" value="<?= $sort ?>">
+			<input type="hidden" name="order" value="<?= $order ?>">
+			<input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
+			<fieldset>
+				<legend>Status</legend>
+				<?php foreach (['Available', 'Low Stock', 'Out of Stock'] as $s): ?>
+					<label>
+						<input type="checkbox" name="status[]" value="<?= $s ?>"
+							<?= in_array($s, $status) ? 'checked' : '' ?>
+							onchange="this.form.submit()">
+						<?= $s ?>
+					</label>
+				<?php endforeach; ?>
+			</fieldset>
+			<label>Filter:</label>
+			<select name="filter" onchange="this.form.submit()">
+				<option value="all" <?= $filter === 'all'   ? 'selected' : '' ?>>All</option>
+				<option value="month" <?= $filter === 'month' ? 'selected' : '' ?>>Monthly</option>
+				<option value="week" <?= $filter === 'week'  ? 'selected' : '' ?>>Weekly</option>
+				<option value="now" <?= $filter === 'now'   ? 'selected' : '' ?>>Today</option>
+			</select>
+
+			<label>Product Type:</label>
+			<select name="productType" onchange="this.form.submit()">
+				<option value="">All Types</option>
+				<?php foreach ($allProductTypes as $type): ?>
+					<option value="<?= htmlspecialchars($type) ?>" <?= $productType === $type ? 'selected' : '' ?>>
+						<?= htmlspecialchars($type) ?>
+					</option>
+				<?php endforeach; ?>
+			</select>
+
+			<?php if ($filter === 'month' || $filter === 'week'): ?>
+				<select name="month" onchange="this.form.submit()">
+					<option value="">Select Month</option>
+					<?php foreach ($months as $num => $name): ?>
+						<option value="<?= $num ?>" <?= $month == $num ? 'selected' : '' ?>><?= $name ?></option>
+					<?php endforeach; ?>
+				</select>
+				<select name="year" onchange="this.form.submit()">
+					<?php for ($y = date('Y'); $y >= 2020; $y--): ?>
+						<option value="<?= $y ?>" <?= $year == $y ? 'selected' : '' ?>><?= $y ?></option>
+					<?php endfor; ?>
+				</select>
+			<?php endif; ?>
+
+			<?php if ($filter === 'week'): ?>
+				<select name="week" onchange="this.form.submit()">
+					<option value="">Select Week</option>
+					<?php for ($w = 1; $w <= 4; $w++): ?>
+						<option value="<?= $w ?>" <?= $week == $w ? 'selected' : '' ?>>Week <?= $w ?></option>
+					<?php endfor; ?>
+				</select>
+			<?php endif; ?>
+		</form>
+
 
 		<form method="post" action="createtransactionpage.php?type=<?= htmlspecialchars($type) ?>">
 			<input type="hidden" name="type" value="<?= htmlspecialchars($type) ?>">

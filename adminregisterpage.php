@@ -1,6 +1,5 @@
 <?php
 session_start();
-
 include_once("database.php");
 include_once("admin.php");
 include_once("adminrepo.php");
@@ -43,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <html>
 
 <body>
-	<form method="post" action="adminregister.php">
+	<form method="post" action="adminregisterpage.php">
 		<label>Full Name:</label>
 		<input type="text" name="fullName" required>
 

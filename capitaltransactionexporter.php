@@ -46,7 +46,7 @@ class CapitalTransactionExporter
 			], null, "A{$row}");
 			$row++;
 		}
-		$salesSheet->fromArray(['', 'Total: ',  $salesTotalFromSalesRepo], null, "A{$row}");
+		$salesSheet->fromArray(['',  '', '', 'Total: ',  $salesTotalFromSalesRepo], null, "A{$row}");
 
 		$depositSheet = $spreadsheet->createSheet();
 		$depositSheet->setTitle('Deposits');

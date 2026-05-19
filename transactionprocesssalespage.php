@@ -3,9 +3,11 @@ session_start();
 include_once("database.php");
 include_once("inventoryrepo.php");
 include_once("producttyperepo.php");
+include_once("capitaltransactionsrepo.php");
 
 $pdo = getPDO();
 $productTypeRepo = new ProductTypeRepo($pdo, $_SESSION['admin_id']);
+$capitalTransactionsRepo = new CapitalTransactionRepo($pdo, $_SESSION['admin_id']);
 $inventoryRepo = new InventoryRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
 
 $inventoryId = isset($_GET['inventory_id']) ? (int)$_GET['inventory_id'] : null;
@@ -40,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 		try {
 			$inventoryRepo->processSales($inventoryId, $amount, $price);
+			$capitalTransactionsRepo->recalculateBalance();
 			header("Location: capitaltestpage.php?sort=$sort&order=$order");
 			exit;
 		} catch (Exception $e) {

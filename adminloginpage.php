@@ -12,15 +12,15 @@ $adminRepo = new AdminRepo($pdo);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	$username = filter_input(INPUT_POST, "username", FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 	$password = filter_input(INPUT_POST, "password", FILTER_SANITIZE_FULL_SPECIAL_CHARS);
-	$admin = $adminRepo->findByUsername($username);
+	$admin = $adminRepo->findByUsername($username) ?? null;
 	if (isset($_POST['cancel'])) {
 		header("Location: index.php");
 		exit();
 	}
 	if (isset($_POST['login'])) {
-		if (!password_verify($password, $admin->getPassword())) {
+		if ($admin === null || !password_verify($password, $admin->getPassword())) {
 			$errorMessage = "Wrong username or password";
-			header("Loction: adminlogin.php");
+			header("Location: adminloginpage.php");
 			exit();
 		} else {
 			$_SESSION['admin_id'] = $admin->getId();
@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html>
 
 <body>
-	<form method="post" action="adminlogin.php">
+	<form method="post" action="adminloginpage.php">
 		<label>Username:</label>
 		<input type="text" name="username" required>
 

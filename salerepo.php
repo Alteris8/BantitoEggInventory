@@ -78,7 +78,7 @@ class SalesRepo extends BaseRepository
 			$dateClause = "AND MONTH(dateSold) = :month AND YEAR(dateSold) = :year AND DAY(dateSold) BETWEEN :start AND :end";
 		}
 
-		$sql = "SELECT COALESCE(SUM(sale), 0) FROM sales_tb WHERE adminId = :adminId $productTypeClause $searchClause $dateClause";
+		$sql = "SELECT COALESCE(SUM(sale), 0) FROM sales_tb WHERE adminId = :adminId $productTypeClause $searchClause $dateClause AND (status = 'active' OR status = 'corrected')";
 
 		$params = [':adminId' => $this->adminId];
 		if ($productType && in_array($productType, $this->allowedProductTypes)) $params[':productType'] = $productType;
@@ -192,6 +192,129 @@ class SalesRepo extends BaseRepository
 
 		]);
 	}
+
+	public function voidSale(int $id): void
+	{
+		$sale = $this->findById($id);
+		$this->pdo->beginTransaction();
+		try {
+			$stmt = $this->pdo->prepare("
+			UPDATE sales_tb
+			SET status = 'voided',
+				originalSaleId = :id
+				WHERE id = :id AND
+				adminId = :adminId
+		");
+
+			$stmt->execute([
+				':id' => $id,
+				':adminId' => $this->adminId
+			]);
+			$stmt = $this->pdo->prepare("
+			UPDATE capital_transactions_tb
+			SET status = 'voided'
+				WHERE saleId = :saleId AND
+				adminId = :adminId
+		");
+
+			$stmt->execute([
+				':saleId' => $id,
+				':adminId' => $this->adminId
+			]);
+
+			$stmt = $this->pdo->prepare("
+			UPDATE inventory_tb
+			SET quantity = quantity + :quantitySold
+			WHERE id = :inventoryId AND 
+			adminId = :adminId
+			");
+			$stmt->execute([
+				':quantitySold' => $sale->getItemsSold(),
+				':inventoryId' => $id,
+				':adminId' => $this->adminId
+			]);
+		} catch (\Throwable $th) {
+			//throw $th;
+		}
+	}
+
+	public function makeSaleActive(int $id): void
+	{
+		$sale = $this->findById($id);
+		$stmt = $this->pdo->prepare("
+			UPDATE sales_tb
+			SET status = 'active'
+				WHERE id = :id AND
+				adminId = :adminId
+		");
+
+		$stmt->execute([
+			':id' => $id,
+			':adminId' => $this->adminId
+		]);
+		$stmt = $this->pdo->prepare("
+			UPDATE capital_transactions_tb
+			SET status = 'active'
+				WHERE saleId = :saleId AND
+				adminId = :adminId
+		");
+
+		$stmt->execute([
+			':saleId' => $id,
+			':adminId' => $this->adminId
+		]);
+
+		$stmt = $this->pdo->prepare("
+			UPDATE inventory_tb
+			SET quantity = quantity - :quantitySold
+			WHERE inventoryId = :inventoryId AND 
+			adminId = :adminId
+			");
+		$stmt->execute([
+			':quantitySold' => $sale->getItemsSold(),
+			':inventoryId' => $id,
+			':adminId' => $this->adminId
+		]);
+	}
+
+	public function correctSale(int $id): void
+	{
+		$sale = $this->findById($id);
+		$stmt = $this->pdo->prepare("
+			UPDATE sales_tb
+			SET status = 'corrected'
+				WHERE id = :id AND
+				adminId = :adminId
+		");
+
+		$stmt->execute([
+			':id' => $id,
+			':adminId' => $this->adminId
+		]);
+		$stmt = $this->pdo->prepare("
+			UPDATE capital_transactions_tb
+			SET status = 'corrected'
+				WHERE saleId = :saleId AND
+				adminId = :adminId
+		");
+
+		$stmt->execute([
+			':saleId' => $id,
+			':adminId' => $this->adminId
+		]);
+
+		$stmt = $this->pdo->prepare("
+			UPDATE inventory_tb
+			SET quantity = quantity + :quantitySold
+			WHERE inventoryId = :inventoryId AND 
+			adminId = :adminId
+			");
+		$stmt->execute([
+			':quantitySold' => $sale->getItemsSold(),
+			':inventoryId' => $id,
+			':adminId' => $this->adminId
+		]);
+	}
 	public function searchSale(string $productName): ?array
 	{
 		$stmt = $this->pdo->prepare("
@@ -210,25 +333,30 @@ class SalesRepo extends BaseRepository
 	}
 	public function delete(int $id): void
 	{
-		$stmt = $this->pdo->prepare("
-			DELETE FROM sales_tb WHERE id = :id AND adminId = :adminId
-			");
+		$this->pdo->beginTransaction();
+		try {
+			$stmt = $this->pdo->prepare("
+            DELETE FROM sales_tb 
+            WHERE originalSaleId = :id AND adminId = :adminId
+        ");
+			$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
 
-		$stmt->execute([
-			':id' => $id,
-			':adminId' => $this->adminId
-		]);
+			$stmt = $this->pdo->prepare("
+            DELETE FROM sales_tb WHERE id = :id AND adminId = :adminId
+        ");
+			$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
 
-		$stmt2 = $this->pdo->prepare("
-		    DELETE FROM capital_transactions_tb 
-		    WHERE saleId = :saleId 
-		    AND adminId = :adminId 
-		    AND type = 'sale'
-		");
-		$stmt2->execute([
-			':saleId' => $id,
-			':adminId' => $this->adminId
-		]);
+			$stmt = $this->pdo->prepare("
+            DELETE FROM capital_transactions_tb 
+            WHERE saleId = :saleId AND adminId = :adminId AND type = 'sale'
+        ");
+			$stmt->execute([':saleId' => $id, ':adminId' => $this->adminId]);
+
+			$this->pdo->commit();
+		} catch (Exception $e) {
+			$this->pdo->rollBack();
+			throw $e;
+		}
 	}
 
 	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'dateSold', string $sortOrder = 'DESC', string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): array
@@ -284,8 +412,6 @@ class SalesRepo extends BaseRepository
 		return array_map(fn($row) => $this->mapToSale($row), $rows);
 	}
 
-
-
 	public function countFiltered(string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null): int
 	{
 		$searchClause = $search !== '' ? "AND name LIKE :search" : "";
@@ -332,6 +458,7 @@ class SalesRepo extends BaseRepository
 			productName: $row['name'],
 			itemsSold: (int)$row['itemsSold'],
 			sale: (float)$row['sale'],
+			status: $row['status'],
 			price: (float)$row['price'],
 			date: new DateTime($row['dateSold']),
 			productType: $row['productType'],

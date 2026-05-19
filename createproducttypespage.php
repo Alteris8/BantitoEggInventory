@@ -14,13 +14,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 	$productType = filter_input(INPUT_POST, "productType", FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 
 	if (isset($_POST['submit'])) {
+		if ($productTypeRepo->findByType($productType) !== null) {
+			$message = "Product type already exists.";
+			header("Location: " . $_SERVER['PHP_SELF']);
+		} else {
 
-		$newProductType = new ProductType($productType);
-		$productTypeRepo->save($newProductType);
-		header("Location: producttypespage.php");
-		exit();
+			$newProductType = new ProductType($productType);
+			$productTypeRepo->save($newProductType);
 
-		$message = "Product type added successfully!";
+			header("Location: producttypespage.php");
+			exit();
+		}
 	}
 }
 ?>

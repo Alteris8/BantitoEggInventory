@@ -28,6 +28,16 @@ class InventoryRepo extends BaseRepository
 
 		return $this->mapToInventory($row);
 	}
+	public function findByProductName(string $productName): ?Inventory
+	{
+		$stmt = $this->pdo->prepare("SELECT * FROM inventory_tb WHERE name=:name AND adminId = :adminId");
+		$stmt->execute([':name' => $productName, ':adminId' => $this->adminId]);
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+		if (!$row) return null;
+
+		return $this->mapToInventory($row);
+	}
 	public function findAll(string $sortColumn = 'lastUpdated', string $sortOrder = 'DESC'): array
 	{
 		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'lastUpdated';
@@ -296,7 +306,7 @@ class InventoryRepo extends BaseRepository
 
 		$stmt->execute([
 			':name' => $inventory->getProductName(),
-			':productType' => $inventory->getProductType(),
+			':productType' => $inventory->getProductType() ?: null,
 			':quantity' => $inventory->getQuantity(),
 			':price' => $inventory->getPrice(),
 			':adminId' => $this->adminId
@@ -361,7 +371,7 @@ class InventoryRepo extends BaseRepository
 		$this->delete($id);
 	}
 
-	public function totalInventoryValue(string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, ?string $productType = null, string $search = '', ?string $status = null): float
+	public function totalInventoryValue(string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, ?string $productType = null, string $search = '', ?array $status = []): float
 	{
 		$productTypeClause = ($productType && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
 		$searchClause      = $search !== '' ? "AND name LIKE :search" : "";
@@ -397,8 +407,11 @@ class InventoryRepo extends BaseRepository
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		$inventories = array_map(fn($row) => $this->mapToInventory($row), $rows);
 
-		if ($status !== null && in_array($status, $this->allowedStockStatuses)) {
-			$inventories = array_filter($inventories, fn($i) => $i->getStatus() === $status);
+		if (!empty($status)) {
+			$allowed = array_intersect($status, $this->allowedStockStatuses); // sanitize
+			if (!empty($allowed)) {
+				$inventories = array_filter($inventories, fn($i) => in_array($i->getStatus(), $allowed));
+			}
 		}
 
 		return array_reduce(
@@ -408,7 +421,7 @@ class InventoryRepo extends BaseRepository
 		);
 	}
 
-	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'lastUpdated', string $sortOrder = 'DESC', string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, ?string $status = null): array
+	public function paginate(int $page = 1, int $limit = 10, string $sortColumn = 'lastUpdated', string $sortOrder = 'DESC', string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, ?array $status = []): array
 	{
 		$offset = ($page - 1) * $limit;
 		if (!in_array($sortColumn, $this->allowedColumns)) $sortColumn = 'lastUpdated';
@@ -460,14 +473,17 @@ class InventoryRepo extends BaseRepository
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		$inventories = array_map(fn($row) => $this->mapToInventory($row), $rows);
 
-		if ($status !== null && in_array($status, $this->allowedStockStatuses)) {
-			$inventories = array_values(array_filter($inventories, fn($i) => $i->getStatus() === $status));
+		if (!empty($status)) {
+			$allowed = array_intersect($status, $this->allowedStockStatuses);
+			if (!empty($allowed)) {
+				$inventories = array_filter($inventories, fn($i) => in_array($i->getStatus(), $allowed));
+			}
 		}
 
 		return $inventories;
 	}
 
-	public function countFiltered(string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, ?string $status = null): int
+	public function countFiltered(string $search = '', string $productType = '', string $filter = 'all', ?int $month = null, ?int $week = null, ?int $year = null, ?array $status = []): int
 	{
 		$searchClause = $search !== '' ? "AND name LIKE :search" : "";
 		$typeClause   = ($productType !== '' && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
@@ -508,8 +524,11 @@ class InventoryRepo extends BaseRepository
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		$inventories = array_map(fn($row) => $this->mapToInventory($row), $rows);
 
-		if ($status !== null && in_array($status, $this->allowedStockStatuses)) {
-			$inventories = array_filter($inventories, fn($i) => $i->getStatus() === $status);
+		if (!empty($status)) {
+			$allowed = array_intersect($status, $this->allowedStockStatuses);
+			if (!empty($allowed)) {
+				$inventories = array_filter($inventories, fn($i) => in_array($i->getStatus(), $allowed));
+			}
 		}
 
 		return count($inventories);

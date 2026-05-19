@@ -1,6 +1,6 @@
 <?php
 include_once("database.php");
-include_once("archiveitem.php");
+include_once("inventory.php");
 include_once("baserepo.php");
 include_once("producttyperepo.php");
 class ArchiveItemRepo extends BaseRepository
@@ -17,7 +17,7 @@ class ArchiveItemRepo extends BaseRepository
 	{
 		return 'archives_tb';
 	}
-	public function findById(int $id): ?ArchiveItem
+	public function findById(int $id): ?Inventory
 	{
 		$stmt = $this->pdo->prepare("SELECT * FROM archives_tb WHERE id=:id AND adminId = :adminId");
 		$stmt->execute([':id' => $id, ':adminId' => $this->adminId]);
@@ -50,13 +50,13 @@ class ArchiveItemRepo extends BaseRepository
 		$productTypeClause = ($productType && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM archives_tb
-        WHERE MONTH(lastUpdated) = :month
-        AND YEAR(lastUpdated) = :year 
-        AND adminId = :adminId
-        $productTypeClause
-        ORDER BY $sortColumn $sortOrder
-    ");
+			SELECT * FROM archives_tb
+			WHERE MONTH(lastUpdated) = :month
+			AND YEAR(lastUpdated) = :year 
+			AND adminId = :adminId
+			$productTypeClause
+			ORDER BY $sortColumn $sortOrder
+		    ");
 
 		$params = [':month' => $month, ':year' => $year, ':adminId' => $this->adminId];
 		if ($productType && in_array($productType, $this->allowedProductTypes)) $params[':productType'] = $productType;
@@ -83,12 +83,12 @@ class ArchiveItemRepo extends BaseRepository
 		$end   = $ranges[$week][1];
 
 		$stmt = $this->pdo->prepare("
-			SELECT * FROM archives_tb
-			WHERE MONTH(lastUpdated) = :month
-		AND YEAR(lastUpdated) = :year
-		AND DAY(lastUpdated) BETWEEN :start AND :end AND adminId = :adminId $productTypeClause
-		ORDER BY $sortColumn $sortOrder
-	");
+				SELECT * FROM archives_tb
+				WHERE MONTH(lastUpdated) = :month
+			AND YEAR(lastUpdated) = :year
+			AND DAY(lastUpdated) BETWEEN :start AND :end AND adminId = :adminId $productTypeClause
+			ORDER BY $sortColumn $sortOrder
+		");
 
 		$params = [
 			':month' => $month,
@@ -112,11 +112,11 @@ class ArchiveItemRepo extends BaseRepository
 		$productTypeClause = ($productType && in_array($productType, $this->allowedProductTypes)) ? "AND productType = :productType" : "";
 
 		$stmt = $this->pdo->prepare("
-			SELECT * FROM archives_tb
-			WHERE adminId = :adminId 
-        AND DATE(lastUpdated) = CURDATE() $productTypeClause
-        ORDER BY $sortColumn $sortOrder
-    ");
+					SELECT * FROM archives_tb
+					WHERE adminId = :adminId 
+			AND DATE(lastUpdated) = CURDATE() $productTypeClause
+			ORDER BY $sortColumn $sortOrder
+		    ");
 		$params = [
 			':adminId' => $this->adminId
 		];
@@ -136,11 +136,11 @@ class ArchiveItemRepo extends BaseRepository
 		if (!in_array($productType, $this->allowedProductTypes)) return [];
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM archives_tb 
-        WHERE adminId = :adminId 
-        AND productType = :productType
-        ORDER BY $sortColumn $sortOrder
-    ");
+			SELECT * FROM archives_tb 
+			WHERE adminId = :adminId 
+			AND productType = :productType
+			ORDER BY $sortColumn $sortOrder
+		    ");
 		$stmt->execute([
 			':adminId'     => $this->adminId,
 			':productType' => $productType,
@@ -169,7 +169,7 @@ class ArchiveItemRepo extends BaseRepository
 	}
 
 
-	public function transferToInventory(int $id, ArchiveItem $archiveItem): void
+	public function transferToInventory(int $id, Inventory $archiveItem): void
 	{
 		$stmt = $this->pdo->prepare("
 			INSERT INTO inventory_tb (name, productType, quantity, price, adminId) 
@@ -219,14 +219,14 @@ class ArchiveItemRepo extends BaseRepository
 		}
 
 		$stmt = $this->pdo->prepare("
-        SELECT * FROM archives_tb
-        WHERE adminId = :adminId
-        $searchClause
-        $typeClause
-        $dateClause
-        ORDER BY $sortColumn $sortOrder
-        LIMIT :limit OFFSET :offset
-    ");
+			SELECT * FROM archives_tb
+			WHERE adminId = :adminId
+			$searchClause
+			$typeClause
+			$dateClause
+			ORDER BY $sortColumn $sortOrder
+			LIMIT :limit OFFSET :offset
+		    ");
 		foreach ($params as $key => $value) {
 			$stmt->bindValue($key, $value);
 		}
@@ -268,19 +268,19 @@ class ArchiveItemRepo extends BaseRepository
 		}
 
 		$stmt = $this->pdo->prepare("
-        SELECT COUNT(*) FROM archives_tb
-        WHERE adminId = :adminId
-        $searchClause
-        $typeClause
-        $dateClause
-    ");
+			SELECT COUNT(*) FROM archives_tb
+			WHERE adminId = :adminId
+			$searchClause
+			$typeClause
+			$dateClause
+		    ");
 		$stmt->execute($params);
 		return (int) $stmt->fetchColumn();
 	}
 
-	private function mapToArchiveItem(array $row): ArchiveItem
+	private function mapToArchiveItem(array $row): Inventory
 	{
-		return new ArchiveItem(
+		return new Inventory(
 			productName: $row['name'],
 			quantity: (int)$row['quantity'],
 			price: (float)$row['price'],

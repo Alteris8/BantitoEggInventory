@@ -18,16 +18,16 @@ class CapitalTransaction
 
 	public function getId(): ?int
 	{
-		return $this->id;
+		return $this->id ?? null;
 	}
 
 	public function getAdminId(): ?int
 	{
-		return $this->adminId;
+		return $this->adminId ?? null;
 	}
 	public function getSaleId(): ?int
 	{
-		return $this->saleId;
+		return $this->saleId ?? null;
 	}
 
 	public function getType(): string
@@ -52,10 +52,10 @@ class CapitalTransaction
 
 	public function getInventoryId(): ?int
 	{
-		return $this->inventoryId;
+		return $this->inventoryId ?? null;
 	}
 	public function getQuantity(): ?int
 	{
-		return $this->quantity;
+		return $this->quantity ?? null;
 	}
 }

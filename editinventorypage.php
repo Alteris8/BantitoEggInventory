@@ -34,10 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	if (isset($_POST['update_id'])) {
 
 		$id = filter_input(INPUT_POST, 'update_id', FILTER_VALIDATE_INT);
-		$name = filter_input(INPUT_POST, 'name', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 		$quantity = filter_input(INPUT_POST, 'quantity', FILTER_VALIDATE_INT);
 		$price = filter_input(INPUT_POST, 'price', FILTER_VALIDATE_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
-		$productType = $_POST['productType'] ?? null;
 
 
 		if (isset($_POST['submit'])) {
@@ -415,28 +413,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 		<input type="hidden" name="update_id" value="<?= $inventory->getId() ?>">
 
-		<label>Product Name</label><br>
-		<input type="text" name="name"
-			value="<?= htmlspecialchars($inventory->getProductName()) ?>" required><br><br>
-
-		<label>Type:</label>
-		<select name="productType">
-			<option value="">-</option>
-			<?php foreach ($allProductTypes as $type): ?>
-				<option value="<?= htmlspecialchars($type) ?>" <?= $inventory->getProductType() === $type ? 'selected' : '' ?>>
-					<?= htmlspecialchars($type) ?>
-				</option>
-			<?php endforeach; ?>
-		</select><br>
-
-
-		<label>Quantity</label><br>
-		<input type="number" name="quantity"
-			value="<?= $inventory->getQuantity() ?>" min="0" required><br><br>
-
-		<label>Price</label><br>
-		<input type="number" name="price"
-			value="<?= $inventory->getPrice() ?>" step="0.01" min="0" required><br><br>
+		<p>
+			<strong>Product Name:</strong>
+			<?= htmlspecialchars($inventory->getProductName()) ?>
+		</p>
+		<p>
+			<strong>Type:</strong>
+			<?= htmlspecialchars($inventory->getProductType()) ?>
+		</p>
 
 		<p>
 			<strong>Status:</strong>
@@ -447,6 +431,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			<strong>Last Updated:</strong>
 			<?= $inventory->getDateUpdated()->format('d-m-Y') ?>
 		</p>
+
+
+
+		<label>Quantity</label><br>
+		<input type="number" name="quantity"
+			value="<?= $inventory->getQuantity() ?>" min="0" required><br><br>
+
+		<label>Price</label><br>
+		<input type="number" name="price"
+			value="<?= $inventory->getPrice() ?>" step="0.01" min="0" required><br><br>
+
 
 		<button type="button" onclick="window.location.href='inventorypage.php?sort=<?= $sort ?>&order=<?= $order ?>'">
 			Cancel

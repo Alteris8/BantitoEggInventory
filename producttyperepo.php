@@ -26,6 +26,28 @@ class ProductTypeRepo extends BaseRepository
 
 		return array_map(fn($row) => $this->mapToProductTypes($row), $rows);
 	}
+	public function findByType(string $type): ?ProductType
+	{
+		$stmt = $this->pdo->prepare("
+			SELECT * FROM product_types_tb
+			WHERE type = :type
+			AND adminId = :adminId
+			LIMIT 1
+		");
+
+		$stmt->execute([
+			':type' => $type,
+			':adminId' => $this->adminId
+		]);
+
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+		if (!$row) {
+			return null;
+		}
+
+		return $this->mapToProductTypes($row);
+	}
 	public function findAllTypes(): array
 	{
 		$stmt = $this->pdo->prepare("SELECT type FROM product_types_tb WHERE adminId = :adminId ORDER BY type ASC");

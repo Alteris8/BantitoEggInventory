@@ -6,6 +6,7 @@ include_once("producttyperepo.php");
 $pdo = getPDO();
 $productTypeRepo = new ProductTypeRepo($pdo, $_SESSION['admin_id']);
 $saleRepo = new SalesRepo($pdo, $_SESSION['admin_id'], $productTypeRepo);
+$capitalTransactionRepo = new CapitalTransactionRepo($pdo, $_SESSION['admin_id']);
 
 $sort        = $_GET['sort']        ?? 'dateSold';
 $order       = $_GET['order']       ?? 'DESC';
@@ -49,6 +50,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		header("Location: salespage.php?sort=$sort&order=$order");
 		exit();
 	}
+	if (isset($_POST['void']) && isset($_POST['void_id'])) {
+		$id = (int)$_POST['void_id'];
+		$saleRepo->delete($id);
+		$capitalTransactionRepo->recalculateBalance();
+		header("Location: salespage.php?sort=$sort&order=$order");
+		exit();
+	}
+
 	if (isset($_POST['backToLogin'])) {
 		header("Location: admintestpage.php");
 		exit;
@@ -430,9 +439,9 @@ function saleUrl(array $overrides = []): string
 					<td>₱<?= number_format($sale->getSale(), 2) ?></td>
 					<td><?= htmlspecialchars($sale->getDate()->format('d-m-Y')) ?></td>
 					<td>
-						<form method="POST" onsubmit="return confirm('Delete this sale?')" style="display:inline">
+						<form method="POST" onsubmit="return confirm('Void this transaction?')" style="display:inline">
 							<input type="hidden" name="delete_id" value="<?= $sale->getId() ?>">
-							<button type="submit" name="delete">Delete</button>
+							<button type="submit" name="delete">Void</button>
 						</form>
 					</td>
 				</tr>

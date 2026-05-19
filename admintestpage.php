@@ -42,10 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		header("Location: capitaltestpage.php");
 		exit();
 	}
-	if (isset($_POST['archive'])) {
-		header("Location: archiveitempage.php");
-		exit();
-	}
 }
 ?>
 
@@ -57,7 +53,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		<input type="submit" name="inventory" value="Inventory Page">
 		<input type="submit" name="sales" value="Sale Page">
 		<input type="submit" name="capital" value="Capital Page">
-		<input type="submit" name="archive" value="Archive Page">
 
 	</form>
 

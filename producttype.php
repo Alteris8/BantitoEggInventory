@@ -8,14 +8,14 @@ class ProductType
 		public readonly ?int $adminId = null,
 	) {}
 
-	public function getId(): int
+	public function getId(): ?int
 	{
-		return $this->id;
+		return $this->id ?? null;
 	}
 
 	public function getAdminId(): ?int
 	{
-		return $this->adminId;
+		return $this->adminId ?? null;
 	}
 	public function getProductType(): string
 	{

@@ -18,14 +18,7 @@ class AdminRepo extends BaseRepository
 		$row = $stmt->fetch(PDO::FETCH_ASSOC);
 
 		if (!$row) return null;
-
-		return new Admin(
-			$row['fullName'],
-			$row['username'],
-			$row['password'],
-			(int)$row['id'],
-			new DateTime($row['createdAt']),
-		);
+		return $this->mapToAdmin($row);
 	}
 	public function findById(int $id): ?Admin
 	{
@@ -35,13 +28,7 @@ class AdminRepo extends BaseRepository
 
 		if (!$row) return null;
 
-		return new Admin(
-			$row['fullName'],
-			$row['username'],
-			$row['password'],
-			(int)$row['id'],
-			new DateTime($row['createdAt']),
-		);
+		return $this->mapToAdmin($row);
 	}
 	public function findAll(string $sortColumn = 'createdAt', string $sortOrder = 'DESC'): array
 	{
@@ -52,13 +39,7 @@ class AdminRepo extends BaseRepository
 		$stmt = $this->pdo->query("SELECT * FROM admins_tb ORDER BY $sortColumn $sortOrder");
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-		return array_map(fn($row) => new Admin(
-			$row['fullName'],
-			$row['username'],
-			$row['password'],
-			(int)$row['id'],
-			new DateTime($row['createdAt']),
-		), $rows);
+		return array_map(fn($row) => $this->mapToAdmin($row), $rows);
 	}
 
 	public function searchAdmin(string $username): ?array
@@ -73,24 +54,8 @@ class AdminRepo extends BaseRepository
 		]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		if (!$rows) return null;
-		return array_map(fn($row) => new Admin(
-			$row['fullName'],
-			$row['username'],
-			$row['password'],
-			(int)$row['id'],
-			new DateTime($row['createdAt']),
-		), $rows);
-	}
 
-	public function delete(int $id): void
-	{
-		$stmt = $this->pdo->prepare("
-			DELETE FROM admins_tb WHERE id = :id
-			");
-
-		$stmt->execute([
-			':id' => $id,
-		]);
+		return array_map(fn($row) => $this->mapToAdmin($row), $rows);
 	}
 
 	public function save(Admin $admin): void
@@ -121,5 +86,15 @@ class AdminRepo extends BaseRepository
 			':fullName' => $admin->getFullName(),
 			':username' => $admin->getUsername(),
 		]);
+	}
+	private function mapToAdmin(array $row): Admin
+	{
+		return new Admin(
+			fullName: $row['fullName'],
+			username: $row['username'],
+			password: $row['password'],
+			id: (int)$row['id'],
+			createdAt: new DateTime($row['createdAt']),
+		);
 	}
 }

@@ -6,6 +6,7 @@ class Sale
 		private readonly string $productName,
 		private readonly int $itemsSold,
 		private readonly float $sale,
+		private readonly string $status,
 		private readonly ?float $price = null,
 		private readonly ?DateTime $date = null,
 		private readonly ?string $productType = null,
@@ -26,6 +27,10 @@ class Sale
 	public function getInventoryId(): ?int
 	{
 		return $this->inventoryId;
+	}
+	public function getStatus(): string
+	{
+		return $this->status;
 	}
 
 	public function getProductName(): string
